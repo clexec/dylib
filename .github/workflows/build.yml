@@ -13,6 +13,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install signing tools
+        run: brew install ldid
+
       - name: Build DeTok.dylib
         run: |
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
@@ -30,7 +33,7 @@ jobs:
             -o DeTok.dylib \
             DouX-main/hooks/ghost_standalone.m \
             DouX-main/hooks/visual_standalone.m
-          xcrun ldid -S DeTok.dylib
+          ldid -S DeTok.dylib
           echo "Built: $(ls -lh DeTok.dylib)"
           file DeTok.dylib
 
