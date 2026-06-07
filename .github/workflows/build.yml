@@ -12,11 +12,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Install dependencies
-        run: brew install ldid xz make
+        run: brew install ldid xz make dpkg
 
       - name: Install Theos
         env:
@@ -32,47 +30,75 @@ jobs:
         working-directory: DouX-main
         run: gmake package FINALPACKAGE=1
 
-      - name: Extract dylib from .deb
+      - name: Extract dylib
         working-directory: DouX-main
         run: |
           DEB=$(ls packages/*.deb | head -1)
-          mkdir -p deb_extract
-          cd deb_extract && ar x ../$DEB
-          tar xf data.tar* 2>/dev/null || tar xf data.tar.lzma 2>/dev/null || true
-          find . -name "*.dylib" | head -1 | xargs -I{} cp {} ../DouX.dylib
-          echo "Dylib: $(ls -lh ../DouX.dylib)"
+          echo "Found deb: $DEB"
+          # Use dpkg-deb (most reliable on macOS with brew dpkg)
+          dpkg-deb -x "$DEB" deb_out
+          DYLIB=$(find deb_out -name "*.dylib" | head -1)
+          echo "Found dylib: $DYLIB"
+          cp "$DYLIB" DouX.dylib
+          ls -lh DouX.dylib
 
       - name: Download Ellekit
         run: |
-          ELLEKIT_URL=$(curl -s https://api.github.com/repos/opa334/Ellekit/releases/latest \
-            | grep browser_download_url | grep "\.deb" | head -1 | cut -d'"' -f4)
-          curl -L "$ELLEKIT_URL" -o ellekit.deb
-          mkdir -p ellekit_extract && cd ellekit_extract && ar x ../ellekit.deb
-          tar xf data.tar* 2>/dev/null || true
-          find . -name "CydiaSubstrate" -o -name "libsubstrate.dylib" | head -5
+          # Get latest Ellekit release URL
+          API=$(curl -s https://api.github.com/repos/opa334/Ellekit/releases/latest)
+          URL=$(echo "$API" | python3 -c "
+          import sys,json
+          data=json.load(sys.stdin)
+          for a in data.get('assets',[]):
+              if a['name'].endswith('.deb'):
+                  print(a['browser_download_url'])
+                  break
+          " 2>/dev/null)
+          if [ -z "$URL" ]; then
+            echo "Ellekit .deb not found, trying zip..."
+            URL=$(echo "$API" | python3 -c "
+          import sys,json
+          data=json.load(sys.stdin)
+          for a in data.get('assets',[]):
+              print(a['browser_download_url'])
+            " 2>/dev/null | head -1)
+          fi
+          echo "Downloading: $URL"
+          curl -L "$URL" -o ellekit_pkg
+          mkdir -p ellekit_out
+          # Try as deb first, then zip
+          dpkg-deb -x ellekit_pkg ellekit_out 2>/dev/null || unzip -o ellekit_pkg -d ellekit_out 2>/dev/null || true
+          echo "Ellekit contents:"
+          find ellekit_out -type f | head -20
 
       - name: Package inject kit
         working-directory: DouX-main
         run: |
           mkdir -p inject_kit/Ellekit.framework
           cp DouX.dylib inject_kit/
-          # Copy Ellekit binary (acts as CydiaSubstrate drop-in)
-          SUBS=$(find ../ellekit_extract -name "CydiaSubstrate" -o -name "libsubstrate*" | head -1)
+          # Find and copy the substrate/ellekit binary
+          SUBS=$(find ../ellekit_out -name "CydiaSubstrate" -not -type d | head -1)
+          if [ -z "$SUBS" ]; then
+            SUBS=$(find ../ellekit_out -name "*.dylib" | head -1)
+          fi
           if [ -n "$SUBS" ]; then
             cp "$SUBS" inject_kit/Ellekit.framework/CydiaSubstrate
+            echo "Bundled: $SUBS"
+          else
+            echo "Warning: Ellekit binary not found"
           fi
-          # Also copy inject script
           cp ../scripts/inject_ipa.py inject_kit/
           cp ../scripts/README.txt inject_kit/
           zip -r DouX-inject-kit.zip inject_kit/
+          echo "Kit size: $(du -sh DouX-inject-kit.zip)"
 
-      - name: Upload inject kit (for Sideloadly — iPhone without jailbreak)
+      - name: Upload inject kit (Sideloadly / AltStore)
         uses: actions/upload-artifact@v4
         with:
           name: DouX-inject-kit
           path: DouX-main/DouX-inject-kit.zip
 
-      - name: Upload .deb (for jailbreak users)
+      - name: Upload .deb (jailbreak)
         uses: actions/upload-artifact@v4
         with:
           name: DouX-deb

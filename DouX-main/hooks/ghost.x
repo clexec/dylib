@@ -1,42 +1,43 @@
 #import "TikTokHeaders.h"
 #import "common.h"
 
-// Returns YES if this URL should be blocked based on active ghost settings
+// Real API endpoints extracted from MusicallyCore binary
 static BOOL ghostShouldBlockURL(NSString *url) {
     if (!url || url.length == 0) return NO;
 
     if ([DouXManager ghostReadReceiptEnabled]) {
-        if ([url containsString:@"/im/ack"]        ||
-            [url containsString:@"msg_read"]        ||
-            [url containsString:@"mark_read"]       ||
-            [url containsString:@"/im/read"]        ||
-            [url containsString:@"read_receipt"]) {
+        if ([url containsString:@"/im/ack"]              ||
+            [url containsString:@"mark_read"]             ||
+            [url containsString:@"markRead"]              ||
+            [url containsString:@"clear_unread"]          ||
+            [url containsString:@"clear_unread_count"]    ||
+            [url containsString:@"bulletin/clear"]) {
             return YES;
         }
     }
 
     if ([DouXManager ghostProfileViewEnabled]) {
-        if ([url containsString:@"profile/view"]   ||
-            [url containsString:@"profile_view"]   ||
-            [url containsString:@"/user/browse"]   ||
-            [url containsString:@"visit_profile"]  ||
-            [url containsString:@"profile/other"]) {
+        // Real endpoints from binary: /tiktok/user/profile/view_record/add/v1
+        if ([url containsString:@"profile/view_record"]  ||
+            [url containsString:@"profile/view"]         ||
+            [url containsString:@"profileviewscontrol"]  ||
+            [url containsString:@"profile_view"]) {
             return YES;
         }
     }
 
     if ([DouXManager ghostOnlineStatusEnabled]) {
-        if ([url containsString:@"im/presence"]    ||
-            [url containsString:@"/im/login"]      ||
-            [url containsString:@"online_status"]  ||
-            [url containsString:@"user/status"]) {
+        if ([url containsString:@"im/presence"]          ||
+            [url containsString:@"im/status"]            ||
+            [url containsString:@"online_status"]) {
             return YES;
         }
     }
 
     if ([DouXManager ghostTypingEnabled]) {
-        if ([url containsString:@"im/typing"]      ||
-            [url containsString:@"typing_status"]) {
+        // Real endpoint from binary: /tiktok/v2/im/typing_recommendation
+        if ([url containsString:@"im/typing"]            ||
+            [url containsString:@"typing_recommendation"]) {
             return YES;
         }
     }
@@ -45,14 +46,15 @@ static BOOL ghostShouldBlockURL(NSString *url) {
 }
 
 // ─────────────────────────────────────────────
-// READ RECEIPTS — block marking DMs as read
+// READ RECEIPTS
+// Real class: TIMConversationManager (TTIMSDK)
 // ─────────────────────────────────────────────
 
-%hook AWEIMConversationService
-- (void)markConversationRead:(id)conversation {
+%hook TIMConversationManager
+- (void)markReadForConversation:(id)conversation {
     if (![DouXManager ghostReadReceiptEnabled]) { %orig; }
 }
-- (void)markMessagesRead:(id)messages inConversation:(id)conversation {
+- (void)markReadWithConversationId:(id)convId {
     if (![DouXManager ghostReadReceiptEnabled]) { %orig; }
 }
 - (void)markAllConversationsRead {
@@ -60,45 +62,49 @@ static BOOL ghostShouldBlockURL(NSString *url) {
 }
 %end
 
-%hook IESIMService
-- (void)ackMessages:(id)arg1 {
+// Auto-retry handler that resends read receipts
+%hook TIMAutoRetryMarkReadHandler
+- (void)handleAutoRetry:(id)arg1 {
     if (![DouXManager ghostReadReceiptEnabled]) { %orig; }
 }
-- (void)markReadForConversation:(id)arg1 {
+- (void)retryMarkRead:(id)arg1 {
     if (![DouXManager ghostReadReceiptEnabled]) { %orig; }
 }
-- (void)sendReadReceiptForMessage:(id)arg1 {
+%end
+
+// Notice mark-read manager
+%hook TTKNoticeContentMarkReadManager
+- (void)markContentRead:(id)arg1 {
+    if (![DouXManager ghostReadReceiptEnabled]) { %orig; }
+}
+- (void)markAllRead {
     if (![DouXManager ghostReadReceiptEnabled]) { %orig; }
 }
 %end
 
 // ─────────────────────────────────────────────
-// PROFILE VIEW GHOST — invisible profile visits
+// PROFILE VIEW GHOST
+// Real class: TTKProfileViewsVisitor (TTIMSDK)
+// Real API:   /tiktok/user/profile/view_record/add/v1
 // ─────────────────────────────────────────────
 
-%hook AWEProfileViewService
-- (void)recordProfileView:(id)arg1 {
+%hook TTKProfileViewsVisitor
+- (void)visitProfile:(id)arg1 {
     if (![DouXManager ghostProfileViewEnabled]) { %orig; }
 }
-- (void)reportProfileView:(id)arg1 {
+- (void)sendVisitEvent:(id)arg1 {
     if (![DouXManager ghostProfileViewEnabled]) { %orig; }
 }
-- (void)sendProfileViewEvent:(id)arg1 {
-    if (![DouXManager ghostProfileViewEnabled]) { %orig; }
-}
-%end
-
-%hook TTKProfilePageTrackHelper
-- (void)trackEnterOtherProfile:(id)arg1 {
-    if (![DouXManager ghostProfileViewEnabled]) { %orig; }
-}
-- (void)sendVisitProfileEvent:(id)arg1 {
+- (void)uploadVisitRecord:(id)arg1 {
     if (![DouXManager ghostProfileViewEnabled]) { %orig; }
 }
 %end
 
-%hook AWEUserBrowseService
-- (void)reportBrowseUser:(id)arg1 {
+%hook TTKProfileViewsManager
+- (void)addProfileView:(id)arg1 {
+    if (![DouXManager ghostProfileViewEnabled]) { %orig; }
+}
+- (void)uploadPendingViews {
     if (![DouXManager ghostProfileViewEnabled]) { %orig; }
 }
 %end
@@ -113,7 +119,7 @@ static BOOL ghostShouldBlockURL(NSString *url) {
 }
 - (void)setOnlineStatus:(NSInteger)status {
     if ([DouXManager ghostOnlineStatusEnabled]) {
-        %orig(0); // 0 = offline
+        %orig(0);
     } else {
         %orig;
     }
@@ -134,7 +140,8 @@ static BOOL ghostShouldBlockURL(NSString *url) {
 %end
 
 // ─────────────────────────────────────────────
-// TYPING INDICATOR — don't show "typing..."
+// TYPING INDICATOR
+// Real API: /tiktok/v2/im/typing_recommendation
 // ─────────────────────────────────────────────
 
 %hook AWEIMTypingService
@@ -149,34 +156,25 @@ static BOOL ghostShouldBlockURL(NSString *url) {
 }
 %end
 
-%hook AWEIMInputBarViewModel
-- (void)textDidChange:(id)arg1 {
-    %orig;
-    // typing event is normally triggered here — suppressed by AWEIMTypingService hook above
-}
-%end
-
 // ─────────────────────────────────────────────
-// NETWORK FALLBACK — catch anything that slipped
-// through the class-level hooks above
+// NETWORK FALLBACK — blocks real API endpoints
+// found in MusicallyCore binary
 // ─────────────────────────────────────────────
 
 %hook NSURLSession
 - (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request
                             completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))completionHandler {
     if (ghostShouldBlockURL(request.URL.absoluteString)) {
-        // Wrap completion to return a fake 200 OK so TikTok doesn't retry
-        NSURLRequest *capturedRequest = request;
+        NSURLRequest *req = request;
         NSURLSessionDataTask *task = %orig(request, ^(NSData *d, NSURLResponse *r, NSError *e) {
             if (completionHandler) {
                 NSHTTPURLResponse *fakeResp = [[NSHTTPURLResponse alloc]
-                    initWithURL:capturedRequest.URL
-                    statusCode:200
+                    initWithURL:req.URL statusCode:200
                     HTTPVersion:@"HTTP/1.1"
                     headerFields:@{@"Content-Type": @"application/json"}];
-                NSData *fakeBody = [@"{\"status_code\":0,\"status_msg\":\"\"}"
-                    dataUsingEncoding:NSUTF8StringEncoding];
-                completionHandler(fakeBody, fakeResp, nil);
+                completionHandler(
+                    [@"{\"status_code\":0,\"status_msg\":\"\"}" dataUsingEncoding:NSUTF8StringEncoding],
+                    fakeResp, nil);
             }
         });
         [task cancel];

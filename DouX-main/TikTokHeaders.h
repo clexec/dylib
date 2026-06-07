@@ -406,33 +406,36 @@ static UIViewController * _Nullable _topMostController(UIViewController * _Nonnu
 }
 // ── Ghost Mode classes ────────────────────────────────────────────────────────
 
-@interface AWEIMConversationService : NSObject
-- (void)markConversationRead:(id)conversation;
-- (void)markMessagesRead:(id)messages inConversation:(id)conversation;
+// Read receipts (TTIMSDK — verified from MusicallyCore)
+@interface TIMConversationManager : NSObject
+- (void)markReadForConversation:(id)conversation;
+- (void)markReadWithConversationId:(id)convId;
 - (void)markAllConversationsRead;
 @end
 
-@interface IESIMService : NSObject
-- (void)ackMessages:(id)arg1;
-- (void)markReadForConversation:(id)arg1;
-- (void)sendReadReceiptForMessage:(id)arg1;
+@interface TIMAutoRetryMarkReadHandler : NSObject
+- (void)handleAutoRetry:(id)arg1;
+- (void)retryMarkRead:(id)arg1;
 @end
 
-@interface AWEProfileViewService : NSObject
-- (void)recordProfileView:(id)arg1;
-- (void)reportProfileView:(id)arg1;
-- (void)sendProfileViewEvent:(id)arg1;
+@interface TTKNoticeContentMarkReadManager : NSObject
+- (void)markContentRead:(id)arg1;
+- (void)markAllRead;
 @end
 
-@interface TTKProfilePageTrackHelper : NSObject
-- (void)trackEnterOtherProfile:(id)arg1;
-- (void)sendVisitProfileEvent:(id)arg1;
+// Profile views (TTKProfileViews* — verified from MusicallyCore)
+@interface TTKProfileViewsVisitor : NSObject
+- (void)visitProfile:(id)arg1;
+- (void)sendVisitEvent:(id)arg1;
+- (void)uploadVisitRecord:(id)arg1;
 @end
 
-@interface AWEUserBrowseService : NSObject
-- (void)reportBrowseUser:(id)arg1;
+@interface TTKProfileViewsManager : NSObject
+- (void)addProfileView:(id)arg1;
+- (void)uploadPendingViews;
 @end
 
+// Online status
 @interface AWEIMPresenceService : NSObject
 - (void)updatePresence:(id)arg1;
 - (void)setOnlineStatus:(NSInteger)status;
@@ -443,14 +446,11 @@ static UIViewController * _Nullable _topMostController(UIViewController * _Nonnu
 - (void)setActiveStatus:(BOOL)active;
 @end
 
+// Typing indicator
 @interface AWEIMTypingService : NSObject
 - (void)startTypingInConversation:(id)arg1;
 - (void)stopTypingInConversation:(id)arg1;
 - (void)sendTypingStatus:(BOOL)isTyping toConversation:(id)conv;
-@end
-
-@interface AWEIMInputBarViewModel : NSObject
-- (void)textDidChange:(id)arg1;
 @end
 
 // ── End Ghost Mode classes ────────────────────────────────────────────────────
