@@ -357,20 +357,30 @@ static const int kSettingsCount = 15;
 
     GhostSettingsVC *ghostVC = [GhostSettingsVC new];
     extern UIViewController *doux_visualSettingsVC(void) __attribute__((weak));
-    UIViewController *visualVC = (doux_visualSettingsVC ? doux_visualSettingsVC() : nil);
+    extern UIViewController *doux_featuresSettingsVC(void) __attribute__((weak));
+    UIViewController *visualVC   = (doux_visualSettingsVC   ? doux_visualSettingsVC()   : nil);
+    UIViewController *featuresVC = (doux_featuresSettingsVC ? doux_featuresSettingsVC() : nil);
 
-    UIViewController *rootVC;
-    if (visualVC) {
-        UITabBarController *tab = [UITabBarController new];
-        UINavigationController *gNav = [[UINavigationController alloc] initWithRootViewController:ghostVC];
-        UINavigationController *vNav = [[UINavigationController alloc] initWithRootViewController:visualVC];
-        ghostVC.tabBarItem  = [[UITabBarItem alloc] initWithTitle:@"Ghost"  image:[UIImage systemImageNamed:@"eye.slash.fill"] tag:0];
-        visualVC.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Visual" image:[UIImage systemImageNamed:@"sparkles"]       tag:1];
-        tab.viewControllers = @[gNav, vNav];
-        rootVC = tab;
-    } else {
-        rootVC = [[UINavigationController alloc] initWithRootViewController:ghostVC];
+    UITabBarController *tab = [UITabBarController new];
+    NSMutableArray *vcs = [NSMutableArray array];
+
+    UINavigationController *gNav = [[UINavigationController alloc] initWithRootViewController:ghostVC];
+    ghostVC.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Ghost" image:[UIImage systemImageNamed:@"eye.slash.fill"] tag:0];
+    [vcs addObject:gNav];
+
+    if (featuresVC) {
+        UINavigationController *fNav = [[UINavigationController alloc] initWithRootViewController:featuresVC];
+        featuresVC.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Features" image:[UIImage systemImageNamed:@"star.fill"] tag:1];
+        [vcs addObject:fNav];
     }
+    if (visualVC) {
+        UINavigationController *vNav = [[UINavigationController alloc] initWithRootViewController:visualVC];
+        visualVC.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Visual" image:[UIImage systemImageNamed:@"sparkles"] tag:2];
+        [vcs addObject:vNav];
+    }
+
+    tab.viewControllers = vcs;
+    UIViewController *rootVC = tab;
     rootVC.modalPresentationStyle = UIModalPresentationFormSheet;
 
     UIViewController *top = win.rootViewController;

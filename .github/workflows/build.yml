@@ -28,11 +28,14 @@ jobs:
             -framework UIKit \
             -framework AVFoundation \
             -framework UniformTypeIdentifiers \
+            -framework Photos \
+            -framework LocalAuthentication \
             -dynamiclib \
             -install_name @executable_path/DeTok.dylib \
             -o DeTok.dylib \
             DouX-main/hooks/ghost_standalone.m \
-            DouX-main/hooks/visual_standalone.m
+            DouX-main/hooks/visual_standalone.m \
+            DouX-main/hooks/features_standalone.m
           ldid -S DeTok.dylib
           echo "Built: $(ls -lh DeTok.dylib)"
           file DeTok.dylib
