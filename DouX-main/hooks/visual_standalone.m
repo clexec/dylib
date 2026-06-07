@@ -68,25 +68,33 @@ static void applyVideoBg(UIViewController *vc) {
 // ─── Liquid Glass tab bar (iOS 26+) ──────────────────────────────────────────
 static void applyGlassTabBar(UITabBarController *tc) {
     if (!glassEnabled()) return;
-    // iOS 26 UITabBar glass — use new UITabBarAppearance with glass material
+
     if (@available(iOS 26.0, *)) {
+        // iOS 26: UITabBarAppearance с glass-материалом (configureWithDefaultBackground)
+        // автоматически даёт floating liquid glass tab bar
         UITabBarAppearance *appearance = [[UITabBarAppearance alloc] init];
-        // UIBlurEffect with systemUltraThinMaterial approximates liquid glass
         [appearance configureWithDefaultBackground];
-        appearance.backgroundColor = [UIColor clearColor];
+        tc.tabBar.standardAppearance = appearance;
+        tc.tabBar.scrollEdgeAppearance = appearance;
 
-        UIBlurEffect *blur = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterial];
-        UIVisualEffectView *ev = [[UIVisualEffectView alloc] initWithEffect:blur];
-        ev.frame = tc.tabBar.bounds;
-        ev.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-        ev.alpha = 0.85;
+        // Также стекло на navigation bar
+        UINavigationBarAppearance *navAppearance = [[UINavigationBarAppearance alloc] init];
+        [navAppearance configureWithDefaultBackground];
+        [UINavigationBar appearance].standardAppearance = navAppearance;
+        [UINavigationBar appearance].scrollEdgeAppearance = navAppearance;
 
-        tc.tabBar.backgroundColor = [UIColor clearColor];
-        tc.tabBar.backgroundImage = [UIImage new];
-        tc.tabBar.shadowImage = [UIImage new];
-        if (![tc.tabBar viewWithTag:8899]) {
-            ev.tag = 8899;
-            [tc.tabBar insertSubview:ev atIndex:0];
+        // Toolbar
+        UIToolbarAppearance *toolAppearance = [[UIToolbarAppearance alloc] init];
+        [toolAppearance configureWithDefaultBackground];
+        [UIToolbar appearance].standardAppearance = toolAppearance;
+
+    } else {
+        // iOS 15-25: UIBlurEffect fallback
+        UITabBarAppearance *appearance = [[UITabBarAppearance alloc] init];
+        [appearance configureWithDefaultBackground];
+        tc.tabBar.standardAppearance = appearance;
+        if (@available(iOS 15.0, *)) {
+            tc.tabBar.scrollEdgeAppearance = appearance;
         }
     }
 }
