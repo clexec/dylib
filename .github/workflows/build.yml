@@ -6,9 +6,39 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  # ── Job 1: Ghost standalone dylib (no Ellekit needed) ────────────────────────
+  build-ghost:
     runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
+      - name: Build GhostMode.dylib
+        run: |
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          xcrun clang \
+            -arch arm64 -arch arm64e \
+            -isysroot "$SDK" \
+            -miphoneos-version-min=15.0 \
+            -fobjc-arc \
+            -framework Foundation -framework UIKit \
+            -dynamiclib \
+            -install_name @executable_path/GhostMode.dylib \
+            -o GhostMode.dylib \
+            DouX-main/hooks/ghost_standalone.m
+          xcrun ldid -S GhostMode.dylib
+          echo "Built: $(ls -lh GhostMode.dylib)"
+          file GhostMode.dylib
+
+      - name: Upload GhostMode.dylib
+        uses: actions/upload-artifact@v4
+        with:
+          name: GhostMode-dylib
+          path: GhostMode.dylib
+
+  # ── Job 2: Full DouX via Theos (jailbreak .deb) ───────────────────────────────
+  build-full:
+    runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,47 +73,29 @@ jobs:
         run: |
           DEB=$(ls packages/*.deb | head -1)
           echo "Found deb: $DEB"
-          # Use dpkg-deb (most reliable on macOS with brew dpkg)
           dpkg-deb -x "$DEB" deb_out
           DYLIB=$(find deb_out -name "*.dylib" | head -1)
           echo "Found dylib: $DYLIB"
           cp "$DYLIB" DouX.dylib
           ls -lh DouX.dylib
 
-      - name: Download Ellekit
-        continue-on-error: true
-        run: |
-          mkdir -p ellekit_out
-          echo "Ellekit has no public GitHub releases — skipping, kit will ship without substrate"
-
       - name: Package inject kit
         working-directory: DouX-main
         run: |
-          mkdir -p inject_kit/Ellekit.framework
+          mkdir -p inject_kit
           cp DouX.dylib inject_kit/
-          # Find and copy the substrate/ellekit binary
-          SUBS=$(find ../ellekit_out -name "CydiaSubstrate" -not -type d | head -1)
-          if [ -z "$SUBS" ]; then
-            SUBS=$(find ../ellekit_out -name "*.dylib" | head -1)
-          fi
-          if [ -n "$SUBS" ]; then
-            cp "$SUBS" inject_kit/Ellekit.framework/CydiaSubstrate
-            echo "Bundled: $SUBS"
-          else
-            echo "Warning: Ellekit binary not found"
-          fi
           cp ../scripts/inject_ipa.py inject_kit/
-          cp ../scripts/README.txt inject_kit/
+          cp ../scripts/README.txt inject_kit/ 2>/dev/null || echo "no README"
           zip -r DouX-inject-kit.zip inject_kit/
           echo "Kit size: $(du -sh DouX-inject-kit.zip)"
 
-      - name: Upload inject kit (Sideloadly / AltStore)
+      - name: Upload inject kit
         uses: actions/upload-artifact@v4
         with:
           name: DouX-inject-kit
           path: DouX-main/DouX-inject-kit.zip
 
-      - name: Upload .deb (jailbreak)
+      - name: Upload .deb
         uses: actions/upload-artifact@v4
         with:
           name: DouX-deb
