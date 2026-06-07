@@ -14,8 +14,9 @@ jobs:
 
       - name: Install tools
         run: |
-          brew install ldid
-          pip3 install lief
+          brew install ldid || true
+          python3 -m pip install --upgrade pip
+          python3 -m pip install lief
 
       - name: Build DeTok.dylib
         run: |
