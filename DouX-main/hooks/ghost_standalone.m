@@ -169,12 +169,35 @@ static BOOL ghostShouldBlock(NSString *url) {
 - (void)handleTap:(UITapGestureRecognizer *)tap {
     UIWindow *win = tap.view.window;
     if (!win) return;
-    GhostSettingsVC *vc = [GhostSettingsVC new];
-    UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:vc];
-    nav.modalPresentationStyle = UIModalPresentationFormSheet;
+
+    // Root menu with Ghost + Visual sections
+    UIViewController *ghostVC = [GhostSettingsVC new];
+
+    // Visual settings loaded dynamically if compiled together
+    extern UIViewController *doux_visualSettingsVC(void) __attribute__((weak));
+    UIViewController *visualVC = doux_visualSettingsVC ? doux_visualSettingsVC() : nil;
+
+    UIViewController *rootVC;
+    if (visualVC) {
+        UIPageViewController *pager = [[UIPageViewController alloc]
+            initWithTransitionStyle:UIPageViewControllerTransitionStyleScroll
+            navigationOrientation:UIPageViewControllerNavigationOrientationHorizontal
+            options:nil];
+        // Simple tab approach — use UITabBarController
+        UITabBarController *tab = [UITabBarController new];
+        UINavigationController *ghostNav = [[UINavigationController alloc] initWithRootViewController:ghostVC];
+        UINavigationController *visualNav = [[UINavigationController alloc] initWithRootViewController:visualVC];
+        ghostVC.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Ghost" image:[UIImage systemImageNamed:@"eye.slash"] tag:0];
+        visualVC.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Visual" image:[UIImage systemImageNamed:@"sparkles"] tag:1];
+        tab.viewControllers = @[ghostNav, visualNav];
+        rootVC = tab;
+    } else {
+        rootVC = [[UINavigationController alloc] initWithRootViewController:ghostVC];
+    }
+    rootVC.modalPresentationStyle = UIModalPresentationFormSheet;
     UIViewController *root = win.rootViewController;
     while (root.presentedViewController) root = root.presentedViewController;
-    [root presentViewController:nav animated:YES completion:nil];
+    [root presentViewController:rootVC animated:YES completion:nil];
 }
 @end
 

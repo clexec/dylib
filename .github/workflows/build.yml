@@ -6,14 +6,14 @@ on:
   workflow_dispatch:
 
 jobs:
-  # ── Job 1: Ghost standalone dylib (no Ellekit needed) ────────────────────────
-  build-ghost:
+  # ── Job 1: DeTok standalone dylib (Ghost + Visual, no Ellekit) ───────────────
+  build-detok:
     runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build GhostMode.dylib
+      - name: Build DeTok.dylib
         run: |
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
           xcrun clang \
@@ -21,20 +21,41 @@ jobs:
             -isysroot "$SDK" \
             -miphoneos-version-min=15.0 \
             -fobjc-arc \
-            -framework Foundation -framework UIKit \
+            -framework Foundation \
+            -framework UIKit \
+            -framework AVFoundation \
             -dynamiclib \
-            -install_name @executable_path/GhostMode.dylib \
-            -o GhostMode.dylib \
-            DouX-main/hooks/ghost_standalone.m
-          xcrun ldid -S GhostMode.dylib
-          echo "Built: $(ls -lh GhostMode.dylib)"
-          file GhostMode.dylib
+            -install_name @executable_path/DeTok.dylib \
+            -o DeTok.dylib \
+            DouX-main/hooks/ghost_standalone.m \
+            DouX-main/hooks/visual_standalone.m
+          xcrun ldid -S DeTok.dylib
+          echo "Built: $(ls -lh DeTok.dylib)"
+          file DeTok.dylib
 
-      - name: Upload GhostMode.dylib
+      - name: Package inject kit
+        run: |
+          mkdir -p detok_kit
+          cp DeTok.dylib detok_kit/
+          cp scripts/inject_ipa.py detok_kit/
+          # Patch inject_ipa.py to use DeTok.dylib name
+          sed -i '' 's/DouX.dylib/DeTok.dylib/g' detok_kit/inject_ipa.py || \
+            sed -i 's/DouX.dylib/DeTok.dylib/g' detok_kit/inject_ipa.py
+          sed -i '' 's/DYLIB_NAME.*=.*"DouX.dylib"/DYLIB_NAME = "DeTok.dylib"/' detok_kit/inject_ipa.py 2>/dev/null || true
+          zip -r DeTok-inject-kit.zip detok_kit/
+          echo "Kit: $(du -sh DeTok-inject-kit.zip)"
+
+      - name: Upload DeTok.dylib
         uses: actions/upload-artifact@v4
         with:
-          name: GhostMode-dylib
-          path: GhostMode.dylib
+          name: DeTok-dylib
+          path: DeTok.dylib
+
+      - name: Upload inject kit
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeTok-inject-kit
+          path: DeTok-inject-kit.zip
 
   # ── Job 2: Full DouX via Theos (jailbreak .deb) ───────────────────────────────
   build-full:
@@ -72,28 +93,10 @@ jobs:
         working-directory: DouX-main
         run: |
           DEB=$(ls packages/*.deb | head -1)
-          echo "Found deb: $DEB"
           dpkg-deb -x "$DEB" deb_out
           DYLIB=$(find deb_out -name "*.dylib" | head -1)
-          echo "Found dylib: $DYLIB"
           cp "$DYLIB" DouX.dylib
           ls -lh DouX.dylib
-
-      - name: Package inject kit
-        working-directory: DouX-main
-        run: |
-          mkdir -p inject_kit
-          cp DouX.dylib inject_kit/
-          cp ../scripts/inject_ipa.py inject_kit/
-          cp ../scripts/README.txt inject_kit/ 2>/dev/null || echo "no README"
-          zip -r DouX-inject-kit.zip inject_kit/
-          echo "Kit size: $(du -sh DouX-inject-kit.zip)"
-
-      - name: Upload inject kit
-        uses: actions/upload-artifact@v4
-        with:
-          name: DouX-inject-kit
-          path: DouX-main/DouX-inject-kit.zip
 
       - name: Upload .deb
         uses: actions/upload-artifact@v4
