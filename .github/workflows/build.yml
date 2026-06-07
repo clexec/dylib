@@ -1,0 +1,80 @@
+name: Build DouX
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: brew install ldid xz make
+
+      - name: Install Theos
+        env:
+          THEOS: ${{ github.workspace }}/theos
+        run: |
+          git clone --recursive https://github.com/theos/theos.git $THEOS
+          curl -LO https://github.com/theos/sdks/releases/latest/download/iPhoneOS16.5.sdk.tar.xz
+          tar xf iPhoneOS16.5.sdk.tar.xz -C $THEOS/sdks
+
+      - name: Build
+        env:
+          THEOS: ${{ github.workspace }}/theos
+        working-directory: DouX-main
+        run: gmake package FINALPACKAGE=1
+
+      - name: Extract dylib from .deb
+        working-directory: DouX-main
+        run: |
+          DEB=$(ls packages/*.deb | head -1)
+          mkdir -p deb_extract
+          cd deb_extract && ar x ../$DEB
+          tar xf data.tar* 2>/dev/null || tar xf data.tar.lzma 2>/dev/null || true
+          find . -name "*.dylib" | head -1 | xargs -I{} cp {} ../DouX.dylib
+          echo "Dylib: $(ls -lh ../DouX.dylib)"
+
+      - name: Download Ellekit
+        run: |
+          ELLEKIT_URL=$(curl -s https://api.github.com/repos/opa334/Ellekit/releases/latest \
+            | grep browser_download_url | grep "\.deb" | head -1 | cut -d'"' -f4)
+          curl -L "$ELLEKIT_URL" -o ellekit.deb
+          mkdir -p ellekit_extract && cd ellekit_extract && ar x ../ellekit.deb
+          tar xf data.tar* 2>/dev/null || true
+          find . -name "CydiaSubstrate" -o -name "libsubstrate.dylib" | head -5
+
+      - name: Package inject kit
+        working-directory: DouX-main
+        run: |
+          mkdir -p inject_kit/Ellekit.framework
+          cp DouX.dylib inject_kit/
+          # Copy Ellekit binary (acts as CydiaSubstrate drop-in)
+          SUBS=$(find ../ellekit_extract -name "CydiaSubstrate" -o -name "libsubstrate*" | head -1)
+          if [ -n "$SUBS" ]; then
+            cp "$SUBS" inject_kit/Ellekit.framework/CydiaSubstrate
+          fi
+          # Also copy inject script
+          cp ../scripts/inject_ipa.py inject_kit/
+          cp ../scripts/README.txt inject_kit/
+          zip -r DouX-inject-kit.zip inject_kit/
+
+      - name: Upload inject kit (for Sideloadly — iPhone without jailbreak)
+        uses: actions/upload-artifact@v4
+        with:
+          name: DouX-inject-kit
+          path: DouX-main/DouX-inject-kit.zip
+
+      - name: Upload .deb (for jailbreak users)
+        uses: actions/upload-artifact@v4
+        with:
+          name: DouX-deb
+          path: DouX-main/packages/*.deb
+          if-no-files-found: warn
