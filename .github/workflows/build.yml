@@ -93,7 +93,7 @@ jobs:
         run: |
           mkdir -p detok_kit
           cp DeTok.dylib detok_kit/
-          cp DouX-main/scripts/inject_ipa.py detok_kit/
+          cp scripts/inject_ipa.py detok_kit/
           printf 'DeTok Inject Kit\n================\nRequirements: Python 3 + lief  (pip install lief)\n\nUsage:\n  python3 inject_ipa.py TikTok.ipa DeTok.dylib DeTok-patched.ipa\n\nThen install with Sideloadly or AltStore.\n' > detok_kit/README.txt
           zip -r DeTok-inject-kit.zip detok_kit/
 
