@@ -1,4 +1,4 @@
-name: Build DouX
+name: Build DeTok
 
 on:
   push:
@@ -6,15 +6,16 @@ on:
   workflow_dispatch:
 
 jobs:
-  # ── Job 1: DeTok standalone dylib (Ghost + Visual, no Ellekit) ───────────────
-  build-detok:
+  build-and-inject:
     runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install signing tools
-        run: brew install ldid
+      - name: Install tools
+        run: |
+          brew install ldid
+          pip3 install lief
 
       - name: Build DeTok.dylib
         run: |
@@ -40,74 +41,112 @@ jobs:
           echo "Built: $(ls -lh DeTok.dylib)"
           file DeTok.dylib
 
-      - name: Package inject kit
-        run: |
-          mkdir -p detok_kit
-          cp DeTok.dylib detok_kit/
-          cp scripts/inject_ipa.py detok_kit/
-          # Patch inject_ipa.py to use DeTok.dylib name
-          sed -i '' 's/DouX.dylib/DeTok.dylib/g' detok_kit/inject_ipa.py || \
-            sed -i 's/DouX.dylib/DeTok.dylib/g' detok_kit/inject_ipa.py
-          sed -i '' 's/DYLIB_NAME.*=.*"DouX.dylib"/DYLIB_NAME = "DeTok.dylib"/' detok_kit/inject_ipa.py 2>/dev/null || true
-          zip -r DeTok-inject-kit.zip detok_kit/
-          echo "Kit: $(du -sh DeTok-inject-kit.zip)"
-
-      - name: Upload DeTok.dylib
+      - name: Upload DeTok.dylib artifact
         uses: actions/upload-artifact@v4
         with:
           name: DeTok-dylib
           path: DeTok.dylib
+
+      - name: Download TikTok IPA
+        id: dl_ipa
+        run: |
+          # Try multiple decrypted IPA mirrors (no App Store login needed)
+          IPA_URL="https://armconverter.com/decryptedappstore/download/835599320"
+          echo "Trying $IPA_URL ..."
+          HTTP=$(curl -L -o TikTok.ipa -w "%{http_code}" \
+            -H "User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)" \
+            --max-time 300 --retry 2 \
+            "$IPA_URL" 2>&1 || echo "000")
+          SIZE=$(wc -c < TikTok.ipa 2>/dev/null || echo 0)
+          echo "HTTP=$HTTP  size=$SIZE"
+          if [ "$SIZE" -lt 10000000 ]; then
+            echo "⚠️  Primary mirror failed or too small, trying backup..."
+            rm -f TikTok.ipa
+            curl -L -o TikTok.ipa \
+              -H "User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)" \
+              --max-time 300 --retry 3 \
+              "https://ipa.cypwn.xyz/TikTok.ipa" 2>&1 || true
+            SIZE2=$(wc -c < TikTok.ipa 2>/dev/null || echo 0)
+            echo "Backup size=$SIZE2"
+          fi
+          FINAL=$(wc -c < TikTok.ipa 2>/dev/null || echo 0)
+          if [ "$FINAL" -lt 1000000 ]; then
+            echo "ipa_available=false" >> $GITHUB_OUTPUT
+            echo "⚠️  Could not download TikTok IPA — uploading dylib only"
+          else
+            echo "ipa_available=true" >> $GITHUB_OUTPUT
+            echo "IPA downloaded: $(ls -lh TikTok.ipa)"
+          fi
+
+      - name: Inject dylib into IPA
+        if: steps.dl_ipa.outputs.ipa_available == 'true'
+        run: |
+          python3 DouX-main/scripts/inject_ipa.py TikTok.ipa DeTok.dylib DeTok-TikTok.ipa
+          echo "Patched IPA: $(ls -lh DeTok-TikTok.ipa)"
+
+      - name: Upload patched IPA
+        if: steps.dl_ipa.outputs.ipa_available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeTok-TikTok-IPA
+          path: DeTok-TikTok.ipa
+          retention-days: 7
+
+      - name: Package inject kit (for manual use)
+        run: |
+          mkdir -p detok_kit
+          cp DeTok.dylib detok_kit/
+          cp DouX-main/scripts/inject_ipa.py detok_kit/
+          cat > detok_kit/README.txt << 'EOF'
+DeTok Inject Kit
+================
+Requirements: Python 3 + lief  →  pip install lief
+
+Usage:
+  python3 inject_ipa.py TikTok.ipa DeTok.dylib DeTok-patched.ipa
+
+Then install DeTok-patched.ipa with:
+  - Sideloadly (recommended, free)
+  - AltStore
+
+Features included:
+  Ghost Mode     — 15 privacy hooks (read receipts, online status, analytics blocking…)
+  Features       — Download HD video, hide ads, progress bar, auto-play, skip recs,
+                   transparent comments, no warnings, region flag, profile save/copy,
+                   like/follow confirmation, app lock, speed control, video grid info
+  Visual         — Custom visual tweaks
+EOF
+          zip -r DeTok-inject-kit.zip detok_kit/
+          echo "Kit: $(du -sh DeTok-inject-kit.zip)"
 
       - name: Upload inject kit
         uses: actions/upload-artifact@v4
         with:
           name: DeTok-inject-kit
           path: DeTok-inject-kit.zip
+          retention-days: 30
 
-  # ── Job 2: Full DouX via Theos (jailbreak .deb) ───────────────────────────────
-  build-full:
-    runs-on: macos-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: brew install ldid xz make dpkg
-
-      - name: Install Theos
-        env:
-          THEOS: ${{ github.workspace }}/theos
+      - name: Summary
         run: |
-          git clone --recursive https://github.com/theos/theos.git $THEOS
-          curl -LO https://github.com/theos/sdks/releases/latest/download/iPhoneOS16.5.sdk.tar.xz
-          tar xf iPhoneOS16.5.sdk.tar.xz -C $THEOS/sdks
-
-      - name: Init submodules
-        working-directory: DouX-main
-        run: |
-          rm -rf libs/JGProgressHUD
-          git clone https://github.com/kunihir0/JGProgressHUD.git libs/JGProgressHUD
-
-      - name: Build
-        env:
-          THEOS: ${{ github.workspace }}/theos
-        working-directory: DouX-main
-        run: |
-          chmod +x layout/DEBIAN/preinst 2>/dev/null || true
-          gmake package FINALPACKAGE=1
-
-      - name: Extract dylib
-        working-directory: DouX-main
-        run: |
-          DEB=$(ls packages/*.deb | head -1)
-          dpkg-deb -x "$DEB" deb_out
-          DYLIB=$(find deb_out -name "*.dylib" | head -1)
-          cp "$DYLIB" DouX.dylib
-          ls -lh DouX.dylib
-
-      - name: Upload .deb
-        uses: actions/upload-artifact@v4
-        with:
-          name: DouX-deb
-          path: DouX-main/packages/*.deb
-          if-no-files-found: warn
+          echo "## DeTok Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Artifact | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| DeTok.dylib | ✅ Built |" >> $GITHUB_STEP_SUMMARY
+          echo "| DeTok-inject-kit.zip | ✅ Ready |" >> $GITHUB_STEP_SUMMARY
+          if [ -f DeTok-TikTok.ipa ]; then
+            SIZE=$(du -sh DeTok-TikTok.ipa | cut -f1)
+            echo "| DeTok-TikTok.ipa | ✅ Ready ($SIZE) |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Install with Sideloadly" >> $GITHUB_STEP_SUMMARY
+            echo "1. Download **DeTok-TikTok-IPA** artifact" >> $GITHUB_STEP_SUMMARY
+            echo "2. Open Sideloadly" >> $GITHUB_STEP_SUMMARY
+            echo "3. Drag the .ipa file into Sideloadly" >> $GITHUB_STEP_SUMMARY
+            echo "4. Enter your Apple ID and click Start" >> $GITHUB_STEP_SUMMARY
+            echo "5. On iPhone: Settings → General → VPN & Device Management → Trust" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| DeTok-TikTok.ipa | ⚠️ IPA download failed — use inject kit manually |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Manual inject" >> $GITHUB_STEP_SUMMARY
+            echo "Download **DeTok-inject-kit** and follow README.txt" >> $GITHUB_STEP_SUMMARY
+          fi

@@ -23,7 +23,7 @@ except ImportError:
     os.system(f'"{sys.executable}" -m pip install lief')
     import lief
 
-DYLIB_NAME   = "DouX.dylib"
+DYLIB_NAME   = "DeTok.dylib"
 ELLEKIT_DIR  = "Ellekit.framework"   # folder next to this script
 
 # ── helpers ───────────────────────────────────────────────────────────────────
