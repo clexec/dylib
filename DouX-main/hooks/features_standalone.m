@@ -522,10 +522,9 @@ UIViewController *doux_featuresSettingsVC(void) {
 
 // ─── 1. AWEAwemeModel — hide ads, progress bar, no-live ──────────────────────
 @interface NSObject (DtAweme)
-- (id)dt_initWithDictionary:(id)d error:(id *)e;
-- (id)dt_init;
 - (BOOL)dt_progressBarDraggable;
 - (BOOL)dt_progressBarVisible;
+- (BOOL)dt_isAds;
 - (void)dt_live_callInitWithDictyCategoryMethod:(id)a;
 + (id)dt_liveStreamURLJSONTransformer;
 + (id)dt_relatedLiveJSONTransformer;
@@ -533,19 +532,10 @@ UIViewController *doux_featuresSettingsVC(void) {
 + (id)dt_aweLiveRoom_subModelPropertyKey;
 @end
 @implementation NSObject (DtAweme)
-- (id)dt_initWithDictionary:(id)d error:(id *)e {
-    id o = [self dt_initWithDictionary:d error:e];
-    if (FPREF(K_HIDE_ADS) && [o isKindOfClass:NSClassFromString(@"AWEAwemeModel")]) {
-        if ([(AWEAwemeModel *)o isAds]) return nil;
-    }
-    return o;
-}
-- (id)dt_init {
-    id o = [self dt_init];
-    if (FPREF(K_HIDE_ADS) && [o isKindOfClass:NSClassFromString(@"AWEAwemeModel")]) {
-        if ([(AWEAwemeModel *)o isAds]) return nil;
-    }
-    return o;
+// Hide ads: intercept isAds getter, if it returns YES hide the cell
+- (BOOL)dt_isAds {
+    BOOL orig = [self dt_isAds];
+    return orig; // just intercept — actual hiding via alpha trick below
 }
 - (BOOL)dt_progressBarDraggable { return FPREF(K_PROGRESS_BAR) ? YES : [self dt_progressBarDraggable]; }
 - (BOOL)dt_progressBarVisible   { return FPREF(K_PROGRESS_BAR) ? YES : [self dt_progressBarVisible];   }
@@ -653,20 +643,23 @@ UIViewController *doux_featuresSettingsVC(void) {
 @end
 
 // ─── 8. TUXLabel — show @username instead of nickname ────────────────────────
-@interface UILabel (DtUsername)
-- (void)dt_setText:(NSString *)t;
+// NOTE: ghost already swizzles UILabel setText: → doux_setText:
+// We hook TUXLabel specifically to intercept AFTER ghost's chain
+@interface NSObject (DtUsername)
+- (void)dt_tux_setText:(NSString *)t;
 @end
-@implementation UILabel (DtUsername)
-- (void)dt_setText:(NSString *)t {
+@implementation NSObject (DtUsername)
+- (void)dt_tux_setText:(NSString *)t {
     if (FPREF(K_SHOW_USERNAME) && t.length > 0) {
-        UIView *sup2 = [self.superview superview];
+        UILabel *selfLabel = (UILabel *)self;
+        UIView *sup2 = [selfLabel.superview superview];
         if ([sup2 isKindOfClass:NSClassFromString(@"AWEPlayInteractionAuthorUserNameButton")]) {
             AWEFeedCellViewController *vc = (AWEFeedCellViewController *)[sup2 yy_viewController];
             NSString *username = vc.model.author.socialName;
-            if (username.length) { [self dt_setText:username]; return; }
+            if (username.length) { [self dt_tux_setText:username]; return; }
         }
     }
-    [self dt_setText:t];
+    [self dt_tux_setText:t];
 }
 @end
 
@@ -916,7 +909,7 @@ UIViewController *doux_featuresSettingsVC(void) {
 }
 @end
 
-// ─── 19. AWEFeedViewTemplateCell — download button ────────────────────────────
+// ─── 19. AWEFeedViewTemplateCell — download button + hide ads ────────────────
 @interface UIView (DtDownload)
 - (void)dt_feed_configWithModel:(id)m;
 - (void)dt_feed_configureWithModel:(id)m;
@@ -926,10 +919,29 @@ UIViewController *doux_featuresSettingsVC(void) {
 @implementation UIView (DtDownload)
 - (void)dt_feed_configWithModel:(id)m {
     [self dt_feed_configWithModel:m];
+    // Hide ads: make cell invisible + zero height feels
+    if (FPREF(K_HIDE_ADS) && [m isKindOfClass:NSClassFromString(@"AWEAwemeModel")]) {
+        if ([(AWEAwemeModel *)m isAds]) {
+            self.hidden = YES;
+            self.alpha = 0;
+            return;
+        }
+    }
+    self.hidden = NO;
+    self.alpha = 1;
     if (FPREF(K_DOWNLOAD_BTN)) [self dt_addDownloadButton];
 }
 - (void)dt_feed_configureWithModel:(id)m {
     [self dt_feed_configureWithModel:m];
+    if (FPREF(K_HIDE_ADS) && [m isKindOfClass:NSClassFromString(@"AWEAwemeModel")]) {
+        if ([(AWEAwemeModel *)m isAds]) {
+            self.hidden = YES;
+            self.alpha = 0;
+            return;
+        }
+    }
+    self.hidden = NO;
+    self.alpha = 1;
     if (FPREF(K_DOWNLOAD_BTN)) [self dt_addDownloadButton];
 }
 - (void)dt_addDownloadButton {
@@ -993,10 +1005,8 @@ static void dt_installHooks(void) {
     // 1. AWEAwemeModel
     Class aweme = NSClassFromString(@"AWEAwemeModel");
     if (aweme) {
-        dt_swizzle(aweme,
-            @selector(initWithDictionary:error:),
-            @selector(dt_initWithDictionary:error:));
-        dt_swizzle(aweme, @selector(init),                @selector(dt_init));
+        // REMOVED: dt_init / dt_initWithDictionary — returning nil from init crashes TikTok
+        // Ads hidden via feed cell hook instead
         dt_swizzle(aweme, @selector(progressBarDraggable),@selector(dt_progressBarDraggable));
         dt_swizzle(aweme, @selector(progressBarVisible),  @selector(dt_progressBarVisible));
         dt_swizzle(aweme,
@@ -1058,10 +1068,10 @@ static void dt_installHooks(void) {
             @selector(disablePullToRefreshGestureRecognizer),
             @selector(dt_disablePullToRefreshGestureRecognizer));
 
-    // 8. Username label
+    // 8. Username label — swizzle TUXLabel with unique selector (no conflict with ghost)
     Class tuxLabel = NSClassFromString(@"TUXLabel");
     if (tuxLabel)
-        dt_swizzle(tuxLabel, @selector(setText:), @selector(dt_setText:));
+        dt_swizzle(tuxLabel, @selector(setText:), @selector(dt_tux_setText:));
 
     // 9. Upload region flag
     Class authorView = NSClassFromString(@"AWEPlayInteractionAuthorView");
