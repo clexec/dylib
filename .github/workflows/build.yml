@@ -54,26 +54,7 @@ jobs:
         continue-on-error: true
         run: |
           mkdir -p ellekit_out
-          # ElleKit is distributed via Havoc repo, no GitHub releases
-          # Try to get from the last known working CI artifact URL pattern
-          API=$(curl -s "https://api.github.com/repos/opa334/ellekit/releases?per_page=1")
-          URL=$(echo "$API" | python3 -c "
-import sys,json
-data=json.load(sys.stdin)
-if data:
-    for a in data[0].get('assets',[]):
-        if a['name'].endswith('.deb'):
-            print(a['browser_download_url'])
-            break
-" 2>/dev/null)
-          if [ -n "$URL" ]; then
-            echo "Downloading: $URL"
-            curl -fL "$URL" -o ellekit.deb && dpkg-deb -x ellekit.deb ellekit_out || true
-          else
-            echo "No Ellekit release found — kit will be built without Ellekit"
-          fi
-          echo "Ellekit contents:"
-          find ellekit_out -type f | head -20
+          echo "Ellekit has no public GitHub releases — skipping, kit will ship without substrate"
 
       - name: Package inject kit
         working-directory: DouX-main
