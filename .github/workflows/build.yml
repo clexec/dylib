@@ -34,7 +34,9 @@ jobs:
         env:
           THEOS: ${{ github.workspace }}/theos
         working-directory: DouX-main
-        run: gmake package FINALPACKAGE=1
+        run: |
+          chmod +x layout/DEBIAN/preinst 2>/dev/null || true
+          gmake package FINALPACKAGE=1
 
       - name: Extract dylib
         working-directory: DouX-main
