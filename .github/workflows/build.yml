@@ -51,31 +51,27 @@ jobs:
           ls -lh DouX.dylib
 
       - name: Download Ellekit
+        continue-on-error: true
         run: |
-          # Get latest Ellekit release URL
-          API=$(curl -s https://api.github.com/repos/opa334/Ellekit/releases/latest)
-          URL=$(echo "$API" | python3 -c "
-          import sys,json
-          data=json.load(sys.stdin)
-          for a in data.get('assets',[]):
-              if a['name'].endswith('.deb'):
-                  print(a['browser_download_url'])
-                  break
-          " 2>/dev/null)
-          if [ -z "$URL" ]; then
-            echo "Ellekit .deb not found, trying zip..."
-            URL=$(echo "$API" | python3 -c "
-          import sys,json
-          data=json.load(sys.stdin)
-          for a in data.get('assets',[]):
-              print(a['browser_download_url'])
-            " 2>/dev/null | head -1)
-          fi
-          echo "Downloading: $URL"
-          curl -L "$URL" -o ellekit_pkg
           mkdir -p ellekit_out
-          # Try as deb first, then zip
-          dpkg-deb -x ellekit_pkg ellekit_out 2>/dev/null || unzip -o ellekit_pkg -d ellekit_out 2>/dev/null || true
+          # ElleKit is distributed via Havoc repo, no GitHub releases
+          # Try to get from the last known working CI artifact URL pattern
+          API=$(curl -s "https://api.github.com/repos/opa334/ellekit/releases?per_page=1")
+          URL=$(echo "$API" | python3 -c "
+import sys,json
+data=json.load(sys.stdin)
+if data:
+    for a in data[0].get('assets',[]):
+        if a['name'].endswith('.deb'):
+            print(a['browser_download_url'])
+            break
+" 2>/dev/null)
+          if [ -n "$URL" ]; then
+            echo "Downloading: $URL"
+            curl -fL "$URL" -o ellekit.deb && dpkg-deb -x ellekit.deb ellekit_out || true
+          else
+            echo "No Ellekit release found — kit will be built without Ellekit"
+          fi
           echo "Ellekit contents:"
           find ellekit_out -type f | head -20
 
