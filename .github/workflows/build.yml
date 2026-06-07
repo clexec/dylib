@@ -24,6 +24,7 @@ jobs:
             -framework Foundation \
             -framework UIKit \
             -framework AVFoundation \
+            -framework UniformTypeIdentifiers \
             -dynamiclib \
             -install_name @executable_path/DeTok.dylib \
             -o DeTok.dylib \
