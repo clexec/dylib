@@ -671,18 +671,18 @@ UIViewController *doux_featuresSettingsVC(void) {
 @end
 
 // ─── 9. AWEPlayInteractionAuthorView — upload region flag ─────────────────────
-@interface AWEPlayInteractionAuthorView (DtRegion)
+@interface NSObject (DtRegion)
 - (void)dt_layoutSubviews_region;
 @end
-@implementation AWEPlayInteractionAuthorView (DtRegion)
+@implementation NSObject (DtRegion)
 - (void)dt_layoutSubviews_region {
     [self dt_layoutSubviews_region];
     if (!FPREF(K_UPLOAD_REGION)) return;
+    UIView *selfView = (UIView *)self;
 
-    // Remove old label
-    [[self viewWithTag:6661] removeFromSuperview];
+    [[selfView viewWithTag:6661] removeFromSuperview];
 
-    AWEFeedCellViewController *vc = (AWEFeedCellViewController *)[self yy_viewController];
+    AWEFeedCellViewController *vc = (AWEFeedCellViewController *)[selfView yy_viewController];
     NSString *region = vc.model.region;
     if (!region.length) return;
 
@@ -694,31 +694,31 @@ UIViewController *doux_featuresSettingsVC(void) {
     lbl.tag = 6661;
     [lbl sizeToFit];
 
-    // Shift stack view right
-    for (UIView *sub in self.subviews) {
+    for (UIView *sub in selfView.subviews) {
         if ([sub isKindOfClass:[UIStackView class]]) {
             CGRect f = sub.frame;
             f.origin.x = 42;
             sub.frame = f;
         }
     }
-    [self addSubview:lbl];
+    [selfView addSubview:lbl];
 }
 @end
 
 // ─── 10. AWEFeedVideoButton — like confirmation ───────────────────────────────
-@interface AWEFeedVideoButton (DtLike)
+@interface NSObject (DtLike)
 - (void)dt_like_touchUpInside;
 @end
-@implementation AWEFeedVideoButton (DtLike)
+@implementation NSObject (DtLike)
 - (void)dt_like_touchUpInside {
-    AWEFeedVideoButton *btn = (AWEFeedVideoButton *)self;
-    if (FPREF(K_LIKE_CONFIRM) &&
-        [btn.imageNameString containsString:@"ic_like"]) {
-        dt_confirm(@"Like this video?", ^{ [self dt_like_touchUpInside]; });
-    } else {
-        [self dt_like_touchUpInside];
+    if (FPREF(K_LIKE_CONFIRM)) {
+        NSString *imgName = [(AWEFeedVideoButton *)self imageNameString];
+        if ([imgName containsString:@"ic_like"]) {
+            dt_confirm(@"Like this video?", ^{ [self dt_like_touchUpInside]; });
+            return;
+        }
     }
+    [self dt_like_touchUpInside];
 }
 @end
 
@@ -764,16 +764,17 @@ UIViewController *doux_featuresSettingsVC(void) {
 @end
 
 // ─── 15. TTKProfileRootView — video count on profile ──────────────────────────
-@interface TTKProfileRootView (DtCount)
+@interface NSObject (DtCount)
 - (void)dt_layoutSubviews_count;
 @end
-@implementation TTKProfileRootView (DtCount)
+@implementation NSObject (DtCount)
 - (void)dt_layoutSubviews_count {
     [self dt_layoutSubviews_count];
     if (!FPREF(K_VIDEO_COUNT)) return;
-    if ([self viewWithTag:6662]) return;
+    UIView *selfView = (UIView *)self;
+    if ([selfView viewWithTag:6662]) return;
 
-    TTKProfileOtherViewController *vc = (TTKProfileOtherViewController *)[self yy_viewController];
+    TTKProfileOtherViewController *vc = (TTKProfileOtherViewController *)[selfView yy_viewController];
     NSNumber *cnt = vc.user.visibleVideosCount;
     if (!cnt) return;
 
@@ -781,7 +782,7 @@ UIViewController *doux_featuresSettingsVC(void) {
     lbl.text  = [NSString stringWithFormat:@"Videos: %@", cnt];
     lbl.font  = [UIFont systemFontOfSize:9];
     lbl.tag   = 6662;
-    [self addSubview:lbl];
+    [selfView addSubview:lbl];
 }
 @end
 
