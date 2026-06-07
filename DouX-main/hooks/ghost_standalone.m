@@ -179,6 +179,9 @@ static BOOL ghostShouldBlock(NSString *url) {
 @end
 
 // ─── Install gesture after app window is ready ────────────────────────────────
+static void installGesture(void);
+static void installGestureRetry(void) { installGesture(); }
+
 static void installGesture(void) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
@@ -191,9 +194,8 @@ static void installGesture(void) {
             if (win) break;
         }
         if (!win) {
-            // Retry once more
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)),
-                           dispatch_get_main_queue(), installGesture);
+                           dispatch_get_main_queue(), ^{ installGestureRetry(); });
             return;
         }
         UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc]
