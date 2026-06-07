@@ -165,18 +165,20 @@ static BOOL ghostShouldBlockURL(NSString *url) {
 - (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request
                             completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))completionHandler {
     if (ghostShouldBlockURL(request.URL.absoluteString)) {
-        NSURLRequest *req = request;
-        NSURLSessionDataTask *task = %orig(request, ^(NSData *d, NSURLResponse *r, NSError *e) {
-            if (completionHandler) {
-                NSHTTPURLResponse *fakeResp = [[NSHTTPURLResponse alloc]
-                    initWithURL:req.URL statusCode:200
-                    HTTPVersion:@"HTTP/1.1"
-                    headerFields:@{@"Content-Type": @"application/json"}];
-                completionHandler(
-                    [@"{\"status_code\":0,\"status_msg\":\"\"}" dataUsingEncoding:NSUTF8StringEncoding],
-                    fakeResp, nil);
-            }
-        });
+        NSURL *blockedURL = request.URL;
+        void (^fakeHandler)(NSData *, NSURLResponse *, NSError *) =
+            ^(NSData *d, NSURLResponse *r, NSError *e) {
+                if (completionHandler) {
+                    NSHTTPURLResponse *fakeResp = [[NSHTTPURLResponse alloc]
+                        initWithURL:blockedURL statusCode:200
+                        HTTPVersion:@"HTTP/1.1"
+                        headerFields:@{@"Content-Type": @"application/json"}];
+                    completionHandler(
+                        [@"{\"status_code\":0}" dataUsingEncoding:NSUTF8StringEncoding],
+                        fakeResp, nil);
+                }
+            };
+        NSURLSessionDataTask *task = %orig(request, fakeHandler);
         [task cancel];
         return task;
     }
