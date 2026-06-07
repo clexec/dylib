@@ -50,31 +50,28 @@ jobs:
       - name: Download TikTok IPA
         id: dl_ipa
         run: |
-          # Try multiple decrypted IPA mirrors (no App Store login needed)
           IPA_URL="https://armconverter.com/decryptedappstore/download/835599320"
-          echo "Trying $IPA_URL ..."
-          HTTP=$(curl -L -o TikTok.ipa -w "%{http_code}" \
+          curl -L -o TikTok.ipa \
             -H "User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)" \
             --max-time 300 --retry 2 \
-            "$IPA_URL" 2>&1 || echo "000")
-          SIZE=$(wc -c < TikTok.ipa 2>/dev/null || echo 0)
-          echo "HTTP=$HTTP  size=$SIZE"
+            "$IPA_URL" || true
+          SIZE=$(stat -f%z TikTok.ipa 2>/dev/null || stat -c%s TikTok.ipa 2>/dev/null || echo 0)
+          echo "Primary mirror size: $SIZE"
           if [ "$SIZE" -lt 10000000 ]; then
-            echo "⚠️  Primary mirror failed or too small, trying backup..."
+            echo "Primary failed, trying backup..."
             rm -f TikTok.ipa
             curl -L -o TikTok.ipa \
               -H "User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)" \
               --max-time 300 --retry 3 \
-              "https://ipa.cypwn.xyz/TikTok.ipa" 2>&1 || true
-            SIZE2=$(wc -c < TikTok.ipa 2>/dev/null || echo 0)
-            echo "Backup size=$SIZE2"
+              "https://ipa.cypwn.xyz/TikTok.ipa" || true
+            SIZE=$(stat -f%z TikTok.ipa 2>/dev/null || stat -c%s TikTok.ipa 2>/dev/null || echo 0)
+            echo "Backup mirror size: $SIZE"
           fi
-          FINAL=$(wc -c < TikTok.ipa 2>/dev/null || echo 0)
-          if [ "$FINAL" -lt 1000000 ]; then
-            echo "ipa_available=false" >> $GITHUB_OUTPUT
-            echo "⚠️  Could not download TikTok IPA — uploading dylib only"
+          if [ "$SIZE" -lt 1000000 ]; then
+            echo "ipa_available=false" >> "$GITHUB_OUTPUT"
+            echo "IPA download failed — will upload dylib only"
           else
-            echo "ipa_available=true" >> $GITHUB_OUTPUT
+            echo "ipa_available=true" >> "$GITHUB_OUTPUT"
             echo "IPA downloaded: $(ls -lh TikTok.ipa)"
           fi
 
@@ -92,32 +89,13 @@ jobs:
           path: DeTok-TikTok.ipa
           retention-days: 7
 
-      - name: Package inject kit (for manual use)
+      - name: Package inject kit
         run: |
           mkdir -p detok_kit
           cp DeTok.dylib detok_kit/
           cp DouX-main/scripts/inject_ipa.py detok_kit/
-          cat > detok_kit/README.txt << 'EOF'
-DeTok Inject Kit
-================
-Requirements: Python 3 + lief  →  pip install lief
-
-Usage:
-  python3 inject_ipa.py TikTok.ipa DeTok.dylib DeTok-patched.ipa
-
-Then install DeTok-patched.ipa with:
-  - Sideloadly (recommended, free)
-  - AltStore
-
-Features included:
-  Ghost Mode     — 15 privacy hooks (read receipts, online status, analytics blocking…)
-  Features       — Download HD video, hide ads, progress bar, auto-play, skip recs,
-                   transparent comments, no warnings, region flag, profile save/copy,
-                   like/follow confirmation, app lock, speed control, video grid info
-  Visual         — Custom visual tweaks
-EOF
+          printf 'DeTok Inject Kit\n================\nRequirements: Python 3 + lief  (pip install lief)\n\nUsage:\n  python3 inject_ipa.py TikTok.ipa DeTok.dylib DeTok-patched.ipa\n\nThen install with Sideloadly or AltStore.\n' > detok_kit/README.txt
           zip -r DeTok-inject-kit.zip detok_kit/
-          echo "Kit: $(du -sh DeTok-inject-kit.zip)"
 
       - name: Upload inject kit
         uses: actions/upload-artifact@v4
@@ -128,25 +106,10 @@ EOF
 
       - name: Summary
         run: |
-          echo "## DeTok Build Complete" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Artifact | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| DeTok.dylib | ✅ Built |" >> $GITHUB_STEP_SUMMARY
-          echo "| DeTok-inject-kit.zip | ✅ Ready |" >> $GITHUB_STEP_SUMMARY
+          echo "## DeTok Build" >> "$GITHUB_STEP_SUMMARY"
           if [ -f DeTok-TikTok.ipa ]; then
             SIZE=$(du -sh DeTok-TikTok.ipa | cut -f1)
-            echo "| DeTok-TikTok.ipa | ✅ Ready ($SIZE) |" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### Install with Sideloadly" >> $GITHUB_STEP_SUMMARY
-            echo "1. Download **DeTok-TikTok-IPA** artifact" >> $GITHUB_STEP_SUMMARY
-            echo "2. Open Sideloadly" >> $GITHUB_STEP_SUMMARY
-            echo "3. Drag the .ipa file into Sideloadly" >> $GITHUB_STEP_SUMMARY
-            echo "4. Enter your Apple ID and click Start" >> $GITHUB_STEP_SUMMARY
-            echo "5. On iPhone: Settings → General → VPN & Device Management → Trust" >> $GITHUB_STEP_SUMMARY
+            echo "IPA ready: $SIZE — install with Sideloadly" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "| DeTok-TikTok.ipa | ⚠️ IPA download failed — use inject kit manually |" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### Manual inject" >> $GITHUB_STEP_SUMMARY
-            echo "Download **DeTok-inject-kit** and follow README.txt" >> $GITHUB_STEP_SUMMARY
+            echo "DeTok.dylib built. Download inject kit for manual IPA patching." >> "$GITHUB_STEP_SUMMARY"
           fi
