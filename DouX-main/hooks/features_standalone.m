@@ -1,7 +1,7 @@
 // features_standalone.m
-// DeTok v1.2 — All features: Download, Feed, Profile, Security
+// DeTok — All features: Download, Feed, Profile, Security
 // Pure ObjC — no Ellekit / no Theos needed
-// Class names verified from BHTikTokPlusPlus Tweak.x + TikTokHeaders.h
+// github.com/clexec/dylib
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
@@ -435,21 +435,32 @@ static NSString * const kDtSpeedLabels[] = {@"0.5×", @"0.75×", @"1× (Normal)"
 }
 
 - (void)close { [self dismissViewControllerAnimated:YES completion:nil]; }
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 4; }
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 5; }
 
 - (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s {
-    switch(s){ case 0: return @"Feed & UI"; case 1: return @"Playback Speed";
-               case 2: return @"Profile";   case 3: return @"Security"; }
+    switch(s){
+        case 0: return @"Feed & UI";
+        case 1: return @"Playback Speed";
+        case 2: return @"Profile";
+        case 3: return @"Security";
+        case 4: return @"DeTok";
+    }
     return nil;
 }
 - (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)s {
     if (s == 3) return @"Tap speed to select. Changes apply immediately.";
+    if (s == 4) return @"Open menu: 3 fingers, triple tap anywhere in TikTok.";
     return nil;
 }
 
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
-    switch(s){ case 0: return kDtFeedCount; case 1: return 6;
-               case 2: return kDtProfileCount; case 3: return kDtSecurityCount; }
+    switch(s){
+        case 0: return kDtFeedCount;
+        case 1: return 6;
+        case 2: return kDtProfileCount;
+        case 3: return kDtSecurityCount;
+        case 4: return 2;
+    }
     return 0;
 }
 
@@ -463,8 +474,23 @@ static NSString * const kDtSpeedLabels[] = {@"0.5×", @"0.75×", @"1× (Normal)"
         cell.selectionStyle = UITableViewCellSelectionStyleDefault;
         CGFloat saved = FVAL(K_SPEED_VAL);
         if (saved < 0.1f) saved = 1.0f;
-        cell.accessoryType = (fabsf(saved - kDtSpeeds[ip.row]) < 0.01f)
+        cell.accessoryType = (fabs(saved - kDtSpeeds[ip.row]) < 0.01)
             ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
+        return cell;
+    }
+
+    if (ip.section == 4) {
+        cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+        cell.accessoryType  = UITableViewCellAccessoryDisclosureIndicator;
+        if (ip.row == 0) {
+            cell.textLabel.text       = @"Telegram Channel";
+            cell.detailTextLabel.text = @"News & updates";
+            cell.imageView.image = [UIImage systemImageNamed:@"paperplane.fill"];
+        } else {
+            cell.textLabel.text       = @"DeTok v1.6";
+            cell.detailTextLabel.text = @"Tap to copy version info";
+            cell.imageView.image = [UIImage systemImageNamed:@"info.circle.fill"];
+        }
         return cell;
     }
 
@@ -491,12 +517,30 @@ static NSString * const kDtSpeedLabels[] = {@"0.5×", @"0.75×", @"1× (Normal)"
 
 - (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
     [tv deselectRowAtIndexPath:ip animated:YES];
-    if (ip.section != 1) return;
-    [[NSUserDefaults standardUserDefaults] setFloat:kDtSpeeds[ip.row] forKey:K_SPEED_VAL];
-    [[NSUserDefaults standardUserDefaults] setBool:YES forKey:K_SPEED_EN];
-    [[NSUserDefaults standardUserDefaults] synchronize];
-    [tv reloadSections:[NSIndexSet indexSetWithIndex:1]
-        withRowAnimation:UITableViewRowAnimationNone];
+    if (ip.section == 1) {
+        [[NSUserDefaults standardUserDefaults] setFloat:kDtSpeeds[ip.row] forKey:K_SPEED_VAL];
+        [[NSUserDefaults standardUserDefaults] setBool:YES forKey:K_SPEED_EN];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+        [tv reloadSections:[NSIndexSet indexSetWithIndex:1]
+            withRowAnimation:UITableViewRowAnimationNone];
+        return;
+    }
+    if (ip.section == 4) {
+        if (ip.row == 0) {
+            // Open Telegram channel — замени на свой канал
+            NSURL *url = [NSURL URLWithString:@"https://t.me/detok_app"];
+            if ([[UIApplication sharedApplication] canOpenURL:url])
+                [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
+        } else {
+            [UIPasteboard generalPasteboard].string = @"DeTok v1.6 — github.com/clexec/dylib";
+            UIAlertController *a = [UIAlertController
+                alertControllerWithTitle:@"DeTok" message:@"Version info copied!"
+                preferredStyle:UIAlertControllerStyleAlert];
+            [a addAction:[UIAlertAction actionWithTitle:@"OK"
+                style:UIAlertActionStyleDefault handler:nil]];
+            [self presentViewController:a animated:YES completion:nil];
+        }
+    }
 }
 
 - (void)toggled:(UISwitch *)sw {
