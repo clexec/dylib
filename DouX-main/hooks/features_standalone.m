@@ -1120,10 +1120,9 @@ static void dt_installHooks(void) {
             @selector(disablePullToRefreshGestureRecognizer),
             @selector(dt_disablePullToRefreshGestureRecognizer));
 
-    // 8. Username label — swizzle TUXLabel with unique selector (no conflict with ghost)
-    Class tuxLabel = NSClassFromString(@"TUXLabel");
-    if (tuxLabel)
-        dt_swizzle(tuxLabel, @selector(setText:), @selector(dt_tux_setText:));
+    // 8. Username label — DISABLED: TUXLabel inherits setText: from UILabel,
+    // which ghost already swizzles. Hooking it here caused a double-swizzle
+    // conflict on the shared UILabel method -> instability. Feature off for safety.
 
     // 9. Upload region flag
     Class authorView = NSClassFromString(@"AWEPlayInteractionAuthorView");

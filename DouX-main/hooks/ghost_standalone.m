@@ -332,19 +332,9 @@ static void installTTNetHooks(void) {
 }
 
 // ─── UI hooks ─────────────────────────────────────────────────────────────────
-@interface UIApplication (GhostScreenshot)
-- (void)doux_sendEvent:(UIEvent *)event;
-@end
-@implementation UIApplication (GhostScreenshot)
-- (void)doux_sendEvent:(UIEvent *)event {
-    if (PREF(K_SCREENSHOT)) {
-        NSString *d = event.description;
-        if ([d containsString:@"Screenshot"] || [d containsString:@"screenshot"])
-            return;
-    }
-    [self doux_sendEvent:event];
-}
-@end
+// NOTE: screenshot detection is blocked at the network layer (ghostShouldBlock
+// matches screenshot/capture_event URLs). No sendEvent: swizzle — that ran on
+// every touch event and never actually caught screenshots (they aren't UIEvents).
 
 @interface UILabel (GhostSeenTS)
 - (void)doux_setText:(NSString *)text;
@@ -531,8 +521,6 @@ static void ghost_init(void) {
     });
 
     @try {
-        swizzle_instance([UIApplication class],
-            @selector(sendEvent:), @selector(doux_sendEvent:));
         swizzle_instance([UILabel class],
             @selector(setText:), @selector(doux_setText:));
     } @catch (...) {}
