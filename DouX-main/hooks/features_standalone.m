@@ -459,7 +459,7 @@ static NSString * const kDtSpeedLabels[] = {@"0.5×", @"0.75×", @"1× (Normal)"
         case 1: return 6;
         case 2: return kDtProfileCount;
         case 3: return kDtSecurityCount;
-        case 4: return 2;
+        case 4: return 3;
     }
     return 0;
 }
@@ -483,11 +483,15 @@ static NSString * const kDtSpeedLabels[] = {@"0.5×", @"0.75×", @"1× (Normal)"
         cell.selectionStyle = UITableViewCellSelectionStyleDefault;
         cell.accessoryType  = UITableViewCellAccessoryDisclosureIndicator;
         if (ip.row == 0) {
-            cell.textLabel.text       = @"Telegram Channel";
-            cell.detailTextLabel.text = @"News & updates";
-            cell.imageView.image = [UIImage systemImageNamed:@"paperplane.fill"];
+            cell.textLabel.text       = @"Developer";
+            cell.detailTextLabel.text = @"@clexec";
+            cell.imageView.image = [UIImage systemImageNamed:@"person.fill"];
+        } else if (ip.row == 1) {
+            cell.textLabel.text       = @"DeTok Channel";
+            cell.detailTextLabel.text = @"@detok — news & updates";
+            cell.imageView.image = [UIImage systemImageNamed:@"megaphone.fill"];
         } else {
-            cell.textLabel.text       = @"DeTok v1.6";
+            cell.textLabel.text       = @"DeTok v1.8";
             cell.detailTextLabel.text = @"Tap to copy version info";
             cell.imageView.image = [UIImage systemImageNamed:@"info.circle.fill"];
         }
@@ -527,12 +531,15 @@ static NSString * const kDtSpeedLabels[] = {@"0.5×", @"0.75×", @"1× (Normal)"
     }
     if (ip.section == 4) {
         if (ip.row == 0) {
-            // Open Telegram channel — замени на свой канал
-            NSURL *url = [NSURL URLWithString:@"https://t.me/detok_app"];
+            NSURL *url = [NSURL URLWithString:@"https://t.me/clexec"];
+            if ([[UIApplication sharedApplication] canOpenURL:url])
+                [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
+        } else if (ip.row == 1) {
+            NSURL *url = [NSURL URLWithString:@"https://t.me/detok"];
             if ([[UIApplication sharedApplication] canOpenURL:url])
                 [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
         } else {
-            [UIPasteboard generalPasteboard].string = @"DeTok v1.6 — github.com/clexec/dylib";
+            [UIPasteboard generalPasteboard].string = @"DeTok v1.8 | t.me/detok | dev: @clexec";
             UIAlertController *a = [UIAlertController
                 alertControllerWithTitle:@"DeTok" message:@"Version info copied!"
                 preferredStyle:UIAlertControllerStyleAlert];
@@ -540,6 +547,7 @@ static NSString * const kDtSpeedLabels[] = {@"0.5×", @"0.75×", @"1× (Normal)"
                 style:UIAlertActionStyleDefault handler:nil]];
             [self presentViewController:a animated:YES completion:nil];
         }
+        return;
     }
 }
 
