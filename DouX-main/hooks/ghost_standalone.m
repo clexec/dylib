@@ -238,11 +238,11 @@ static void hooked_asyncRequest(id self, SEL cmd,
     id callback, dispatch_queue_t queue,
     BOOL encrypt, NSInteger tagType)
 {
-    if (ghostShouldBlock(url)) {
-        // Silently drop — analytics/tracking requests are fire-and-forget
-        // App won't crash waiting for response
-        return;
-    }
+    @try {
+        NSString *urlStr = [url isKindOfClass:[NSURL class]]
+            ? [(NSURL*)url absoluteString] : url;
+        if ([urlStr isKindOfClass:[NSString class]] && ghostShouldBlock(urlStr)) return;
+    } @catch (...) {}
     orig_asyncRequest(self, cmd, url, method, queryParams, postParams,
                       callback, queue, encrypt, tagType);
 }
@@ -258,7 +258,11 @@ static void hooked_requestURL(id self, SEL cmd,
     NSDictionary *getParams, NSDictionary *postParams,
     NSDictionary *headers, BOOL needCommonParams, id completion)
 {
-    if (ghostShouldBlock(url)) return;
+    @try {
+        NSString *urlStr = [url isKindOfClass:[NSURL class]]
+            ? [(NSURL*)url absoluteString] : url;
+        if ([urlStr isKindOfClass:[NSString class]] && ghostShouldBlock(urlStr)) return;
+    } @catch (...) {}
     orig_requestURL(self, cmd, url, method, getParams, postParams,
                     headers, needCommonParams, completion);
 }
@@ -268,17 +272,17 @@ typedef void (*TTNetSendRequestIMP)(id, SEL, id, id);
 static TTNetSendRequestIMP orig_sendRequest = NULL;
 
 static void hooked_sendRequest(id self, SEL cmd, id request, id handler) {
-    // Try to get URL from request object
-    NSString *urlStr = nil;
-    if ([request respondsToSelector:@selector(url)]) {
-        urlStr = [request performSelector:@selector(url)];
-    } else if ([request respondsToSelector:@selector(requestURL)]) {
-        id urlObj = [request performSelector:@selector(requestURL)];
-        urlStr = [urlObj isKindOfClass:[NSURL class]] ? [(NSURL*)urlObj absoluteString] : urlObj;
-    } else if ([request respondsToSelector:@selector(URLString)]) {
-        urlStr = [request performSelector:@selector(URLString)];
-    }
-    if (urlStr && ghostShouldBlock(urlStr)) return;
+    @try {
+        NSString *urlStr = nil;
+        if ([request respondsToSelector:@selector(url)])
+            urlStr = [request performSelector:@selector(url)];
+        else if ([request respondsToSelector:@selector(requestURL)]) {
+            id u = [request performSelector:@selector(requestURL)];
+            urlStr = [u isKindOfClass:[NSURL class]] ? [(NSURL*)u absoluteString] : u;
+        } else if ([request respondsToSelector:@selector(URLString)])
+            urlStr = [request performSelector:@selector(URLString)];
+        if ([urlStr isKindOfClass:[NSString class]] && ghostShouldBlock(urlStr)) return;
+    } @catch (...) {}
     orig_sendRequest(self, cmd, request, handler);
 }
 
@@ -507,29 +511,31 @@ static void swizzle_instance(Class cls, SEL orig, SEL swiz) {
 
 __attribute__((constructor))
 static void ghost_init(void) {
-    // Layer 1: NSURLProtocol
-    [NSURLProtocol registerClass:[GhostProtocol class]];
+    @try {
+        [NSURLProtocol registerClass:[GhostProtocol class]];
+    } @catch (...) {}
 
-    // Layer 2 + 3: NSURLSession + TTNet hooks (after MusicallyCore is loaded)
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5*NSEC_PER_SEC)),
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0*NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
-        // NSURLSession swizzle
-        swizzle_instance([NSURLSession class],
-            @selector(dataTaskWithRequest:completionHandler:),
-            @selector(ghost_dataTaskWithRequest:completionHandler:));
-        swizzle_instance([NSURLSession class],
-            @selector(dataTaskWithURL:completionHandler:),
-            @selector(ghost_dataTaskWithURL:completionHandler:));
-
-        // TTNet direct hooks (the real fix)
-        installTTNetHooks();
+        @try {
+            swizzle_instance([NSURLSession class],
+                @selector(dataTaskWithRequest:completionHandler:),
+                @selector(ghost_dataTaskWithRequest:completionHandler:));
+            swizzle_instance([NSURLSession class],
+                @selector(dataTaskWithURL:completionHandler:),
+                @selector(ghost_dataTaskWithURL:completionHandler:));
+        } @catch (...) {}
+        @try {
+            installTTNetHooks();
+        } @catch (...) {}
     });
 
-    // UI: screenshot + seen timestamp
-    swizzle_instance([UIApplication class],
-        @selector(sendEvent:), @selector(doux_sendEvent:));
-    swizzle_instance([UILabel class],
-        @selector(setText:), @selector(doux_setText:));
+    @try {
+        swizzle_instance([UIApplication class],
+            @selector(sendEvent:), @selector(doux_sendEvent:));
+        swizzle_instance([UILabel class],
+            @selector(setText:), @selector(doux_setText:));
+    } @catch (...) {}
 
     installGesture();
 }
