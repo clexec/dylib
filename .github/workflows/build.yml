@@ -38,78 +38,57 @@ jobs:
             DouX-main/hooks/visual_standalone.m \
             DouX-main/hooks/features_standalone.m
           ldid -S DeTok.dylib
-          echo "Built: $(ls -lh DeTok.dylib)"
-          file DeTok.dylib
+          echo "DeTok.dylib: $(ls -lh DeTok.dylib)"
 
-      - name: Upload DeTok.dylib artifact
+      - name: Build RXPatch.dylib
+        run: |
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          xcrun clang \
+            -arch arm64 -arch arm64e \
+            -isysroot "$SDK" \
+            -miphoneos-version-min=15.0 \
+            -fobjc-arc \
+            -framework Foundation \
+            -framework UIKit \
+            -dynamiclib \
+            -install_name @executable_path/Frameworks/RXPatch.dylib \
+            -o RXPatch.dylib \
+            DouX-main/hooks/rxpatch_standalone.m
+          ldid -S RXPatch.dylib
+          echo "RXPatch.dylib: $(ls -lh RXPatch.dylib)"
+
+      - name: Upload DeTok.dylib
         uses: actions/upload-artifact@v4
         with:
           name: DeTok-dylib
           path: DeTok.dylib
 
-      - name: Download TikTok IPA
-        id: dl_ipa
-        run: |
-          IPA_URL="https://armconverter.com/decryptedappstore/download/835599320"
-          curl -L -o TikTok.ipa \
-            -H "User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)" \
-            --max-time 300 --retry 2 \
-            "$IPA_URL" || true
-          SIZE=$(stat -f%z TikTok.ipa 2>/dev/null || stat -c%s TikTok.ipa 2>/dev/null || echo 0)
-          echo "Primary mirror size: $SIZE"
-          if [ "$SIZE" -lt 10000000 ]; then
-            echo "Primary failed, trying backup..."
-            rm -f TikTok.ipa
-            curl -L -o TikTok.ipa \
-              -H "User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)" \
-              --max-time 300 --retry 3 \
-              "https://ipa.cypwn.xyz/TikTok.ipa" || true
-            SIZE=$(stat -f%z TikTok.ipa 2>/dev/null || stat -c%s TikTok.ipa 2>/dev/null || echo 0)
-            echo "Backup mirror size: $SIZE"
-          fi
-          if [ "$SIZE" -lt 1000000 ]; then
-            echo "ipa_available=false" >> "$GITHUB_OUTPUT"
-            echo "IPA download failed — will upload dylib only"
-          else
-            echo "ipa_available=true" >> "$GITHUB_OUTPUT"
-            echo "IPA downloaded: $(ls -lh TikTok.ipa)"
-          fi
-
-      - name: Inject dylib into IPA
-        if: steps.dl_ipa.outputs.ipa_available == 'true'
-        run: |
-          python3 DouX-main/scripts/inject_ipa.py TikTok.ipa DeTok.dylib DeTok-TikTok.ipa
-          echo "Patched IPA: $(ls -lh DeTok-TikTok.ipa)"
-
-      - name: Upload patched IPA
-        if: steps.dl_ipa.outputs.ipa_available == 'true'
+      - name: Upload RXPatch.dylib
         uses: actions/upload-artifact@v4
         with:
-          name: DeTok-TikTok-IPA
-          path: DeTok-TikTok.ipa
-          retention-days: 7
+          name: RXPatch-dylib
+          path: RXPatch.dylib
 
       - name: Package inject kit
         run: |
           mkdir -p detok_kit
           cp DeTok.dylib detok_kit/
+          cp RXPatch.dylib detok_kit/
           cp scripts/inject_ipa.py detok_kit/
-          printf 'DeTok Inject Kit\n================\nRequirements: Python 3 + lief  (pip install lief)\n\nUsage:\n  python3 inject_ipa.py TikTok.ipa DeTok.dylib DeTok-patched.ipa\n\nThen install with Sideloadly or AltStore.\n' > detok_kit/README.txt
-          zip -r DeTok-inject-kit.zip detok_kit/
+          printf 'DeTok + RXPatch Inject Kit\n==========================\nRequirements: pip install lief\n\nFor DeTok (our TikTok tweak):\n  python3 inject_ipa.py TikTok.ipa DeTok.dylib DeTok-patched.ipa\n\nFor RXTikTok (patch key prompt):\n  python3 inject_ipa.py RXTikTok.ipa RXPatch.dylib RX-patched.ipa\n  (RXPatch.dylib goes into Frameworks/ folder)\n' > detok_kit/README.txt
+          zip -r inject-kit.zip detok_kit/
 
       - name: Upload inject kit
         uses: actions/upload-artifact@v4
         with:
-          name: DeTok-inject-kit
-          path: DeTok-inject-kit.zip
+          name: inject-kit
+          path: inject-kit.zip
           retention-days: 30
 
       - name: Summary
         run: |
-          echo "## DeTok Build" >> "$GITHUB_STEP_SUMMARY"
-          if [ -f DeTok-TikTok.ipa ]; then
-            SIZE=$(du -sh DeTok-TikTok.ipa | cut -f1)
-            echo "IPA ready: $SIZE — install with Sideloadly" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "DeTok.dylib built. Download inject kit for manual IPA patching." >> "$GITHUB_STEP_SUMMARY"
-          fi
+          echo "## Build Complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "| File | Size |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| DeTok.dylib | $(du -sh DeTok.dylib | cut -f1) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| RXPatch.dylib | $(du -sh RXPatch.dylib | cut -f1) |" >> "$GITHUB_STEP_SUMMARY"
