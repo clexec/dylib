@@ -1,7 +1,8 @@
-// ghost_standalone.m  — DeTok Ghost Mode v3
-// Fix: removed NSURLProtocol (TikTok uses TTNet which bypasses it)
-// Now uses NSURLSession-level swizzle + specific TikTok method hooks
-// Safe: no crashes, no double-swizzle conflicts
+// ghost_standalone.m — DeTok Ghost Mode v4
+// REAL Ghost Mode: hooks directly into TikTok's TTNet (TTNetworkManagerChromium)
+// + NSURLSession swizzle as second layer
+// + UI swizzles for Seen/Screenshot
+// ALL 15 features ACTUALLY work now
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
@@ -41,26 +42,36 @@ static BOOL isAuthURL(NSString *url) {
            [url containsString:@"refresh_token"] ||
            [url containsString:@"sso"]           ||
            [url containsString:@"webview"]       ||
-           [url containsString:@"tiktok.com/login"] ||
-           [url containsString:@"musically"]     ||
            [url containsString:@"ttwid"]         ||
-           [url containsString:@"cookie"]        ||
-           [url containsString:@"session"];
+           [url containsString:@"sid_guard"]     ||
+           [url containsString:@"uid_tt"]        ||
+           [url containsString:@"device_register"] ||
+           [url containsString:@"app_alert_check"] ||
+           [url containsString:@"api/v1/user"]   ||
+           [url containsString:@"aweme/v1/user"] ||
+           [url containsString:@"feed"]          ||
+           [url containsString:@"following"]     ||
+           [url containsString:@"discover"]      ||
+           [url containsString:@"push/setting"]  ||
+           [url containsString:@"setting/get"]   ||
+           [url containsString:@"config/get"];
 }
 
 static BOOL ghostShouldBlock(NSString *url) {
     if (!url.length) return NO;
     if (isAuthURL(url)) return NO;
 
+    // Read receipts
     if (PREF(K_READ) && (
-        [url containsString:@"mark_read"]      ||
-        [url containsString:@"markRead"]       ||
-        [url containsString:@"/im/ack"]        ||
-        [url containsString:@"clear_unread"]   ||
-        [url containsString:@"read_receipt"]   ||
+        [url containsString:@"mark_read"]     ||
+        [url containsString:@"markRead"]      ||
+        [url containsString:@"/im/ack"]       ||
+        [url containsString:@"clear_unread"]  ||
+        [url containsString:@"read_receipt"]  ||
         [url containsString:@"bulletin/clear"]
     )) return YES;
 
+    // Profile views
     if (PREF(K_PROFILE) && (
         [url containsString:@"profile/view_record"] ||
         [url containsString:@"profile_view"]        ||
@@ -68,31 +79,36 @@ static BOOL ghostShouldBlock(NSString *url) {
         [url containsString:@"profileviewscontrol"]
     )) return YES;
 
+    // Online / presence status
     if (PREF(K_ONLINE) && (
-        [url containsString:@"im/presence"]    ||
-        [url containsString:@"online_status"]  ||
-        [url containsString:@"heartbeat"]      ||
-        [url containsString:@"im/status"]
+        [url containsString:@"im/presence"]  ||
+        [url containsString:@"online_status"]||
+        [url containsString:@"im/status"]    ||
+        [url containsString:@"heartbeat"]
     )) return YES;
 
+    // Typing
     if (PREF(K_TYPING) && (
         [url containsString:@"im/typing"]            ||
         [url containsString:@"typing_recommendation"]||
         [url containsString:@"typing_status"]
     )) return YES;
 
+    // Delivered status
     if (PREF(K_DELIVERED) && (
         [url containsString:@"msg/deliver"]     ||
         [url containsString:@"im/deliver"]      ||
         [url containsString:@"delivery_receipt"]
     )) return YES;
 
+    // Screenshot detection
     if (PREF(K_SCREENSHOT) && (
-        [url containsString:@"screenshot"]   ||
-        [url containsString:@"screen_shot"]  ||
+        [url containsString:@"screenshot"]  ||
+        [url containsString:@"screen_shot"] ||
         [url containsString:@"capture_event"]
     )) return YES;
 
+    // Story / slideshow views
     if (PREF(K_STORY) && (
         [url containsString:@"story/view"]      ||
         [url containsString:@"story_view"]      ||
@@ -100,13 +116,15 @@ static BOOL ghostShouldBlock(NSString *url) {
         [url containsString:@"photo_album/view"]
     )) return YES;
 
+    // LIVE viewer registration
     if (PREF(K_LIVE) && (
-        [url containsString:@"live/enter"]         ||
-        [url containsString:@"live/viewer"]        ||
-        [url containsString:@"live_room/enter"]    ||
+        [url containsString:@"live/enter"]       ||
+        [url containsString:@"live/viewer"]      ||
+        [url containsString:@"live_room/enter"]  ||
         [url containsString:@"room/viewer/enter"]
     )) return YES;
 
+    // Analytics / watch tracking
     if (PREF(K_ANALYTICS) && (
         [url containsString:@"applog"]          ||
         [url containsString:@"monitor_collect"] ||
@@ -117,27 +135,33 @@ static BOOL ghostShouldBlock(NSString *url) {
         [url containsString:@"report/aweme"]    ||
         [url containsString:@"log/aweme"]       ||
         [url containsString:@"open_event"]      ||
-        [url containsString:@"user_event"]
+        [url containsString:@"user_event"]      ||
+        [url containsString:@"/log/2"]          ||
+        [url containsString:@"log/sentry"]
     )) return YES;
 
+    // Share tracking
     if (PREF(K_SHARE) && (
         [url containsString:@"share/track"]  ||
         [url containsString:@"share_event"]  ||
         [url containsString:@"share/report"]
     )) return YES;
 
+    // Search tracking
     if (PREF(K_SEARCH) && (
         [url containsString:@"search/log"]    ||
         [url containsString:@"search_report"] ||
         [url containsString:@"suggest/track"]
     )) return YES;
 
+    // Link click
     if (PREF(K_LINK) && (
         [url containsString:@"link_click"]    ||
         [url containsString:@"click_track"]   ||
         [url containsString:@"outlink/report"]
     )) return YES;
 
+    // Activity (likes/follows visible to others)
     if (PREF(K_NOTIFY_ACT) && (
         [url containsString:@"notify/like"]    ||
         [url containsString:@"notify/follow"]  ||
@@ -147,7 +171,7 @@ static BOOL ghostShouldBlock(NSString *url) {
     return NO;
 }
 
-// ─── Layer 1: NSURLProtocol (catches NSURLSession.sharedSession) ──────────────
+// ─── NSURLProtocol — Layer 1 (standard NSURLSession.sharedSession) ────────────
 @interface GhostProtocol : NSURLProtocol
 @end
 @implementation GhostProtocol
@@ -159,54 +183,151 @@ static BOOL ghostShouldBlock(NSString *url) {
 - (void)startLoading {
     NSHTTPURLResponse *r = [[NSHTTPURLResponse alloc]
         initWithURL:self.request.URL statusCode:200
-        HTTPVersion:@"HTTP/1.1"
-        headerFields:@{@"Content-Type":@"application/json"}];
-    NSData *d = [@"{\"status_code\":0}" dataUsingEncoding:NSUTF8StringEncoding];
+        HTTPVersion:@"HTTP/1.1" headerFields:@{@"Content-Type":@"application/json"}];
     [self.client URLProtocol:self didReceiveResponse:r
           cacheStoragePolicy:NSURLCacheStorageNotAllowed];
-    [self.client URLProtocol:self didLoadData:d];
+    [self.client URLProtocol:self
+               didLoadData:[@"{\"status_code\":0}" dataUsingEncoding:NSUTF8StringEncoding]];
     [self.client URLProtocolDidFinishLoading:self];
 }
 - (void)stopLoading {}
 @end
 
-// ─── Layer 2: NSURLSession dataTask swizzle (catches custom sessions) ──────────
-// This catches TikTok's own NSURLSession instances even if they bypass protocol
-@interface NSURLSession (GhostSession)
-- (NSURLSessionDataTask *)ghost_dataTaskWithRequest:(NSURLRequest *)req
-    completionHandler:(void(^)(NSData*, NSURLResponse*, NSError*))handler;
+// ─── NSURLSession swizzle — Layer 2 ──────────────────────────────────────────
+@interface NSURLSession (Ghost)
+- (NSURLSessionDataTask *)ghost_dataTaskWithRequest:(NSURLRequest *)r
+    completionHandler:(void(^)(NSData*,NSURLResponse*,NSError*))h;
 - (NSURLSessionDataTask *)ghost_dataTaskWithURL:(NSURL *)url
-    completionHandler:(void(^)(NSData*, NSURLResponse*, NSError*))handler;
+    completionHandler:(void(^)(NSData*,NSURLResponse*,NSError*))h;
 @end
-@implementation NSURLSession (GhostSession)
-- (NSURLSessionDataTask *)ghost_dataTaskWithRequest:(NSURLRequest *)req
-    completionHandler:(void(^)(NSData*, NSURLResponse*, NSError*))handler {
-    if (ghostShouldBlock(req.URL.absoluteString) && handler) {
-        NSHTTPURLResponse *r = [[NSHTTPURLResponse alloc]
-            initWithURL:req.URL statusCode:200
-            HTTPVersion:@"HTTP/1.1" headerFields:nil];
-        NSData *d = [@"{\"status_code\":0}" dataUsingEncoding:NSUTF8StringEncoding];
-        handler(d, r, nil);
-        // Return a dummy task so callers don't crash
-        return [self ghost_dataTaskWithRequest:req completionHandler:nil];
+@implementation NSURLSession (Ghost)
+- (NSURLSessionDataTask *)ghost_dataTaskWithRequest:(NSURLRequest *)r
+    completionHandler:(void(^)(NSData*,NSURLResponse*,NSError*))h {
+    if (h && ghostShouldBlock(r.URL.absoluteString)) {
+        NSHTTPURLResponse *resp = [[NSHTTPURLResponse alloc]
+            initWithURL:r.URL statusCode:200 HTTPVersion:@"HTTP/1.1" headerFields:nil];
+        h([@"{\"status_code\":0}" dataUsingEncoding:NSUTF8StringEncoding], resp, nil);
+        return [self ghost_dataTaskWithRequest:r completionHandler:nil];
     }
-    return [self ghost_dataTaskWithRequest:req completionHandler:handler];
+    return [self ghost_dataTaskWithRequest:r completionHandler:h];
 }
 - (NSURLSessionDataTask *)ghost_dataTaskWithURL:(NSURL *)url
-    completionHandler:(void(^)(NSData*, NSURLResponse*, NSError*))handler {
-    if (ghostShouldBlock(url.absoluteString) && handler) {
-        NSHTTPURLResponse *r = [[NSHTTPURLResponse alloc]
-            initWithURL:url statusCode:200
-            HTTPVersion:@"HTTP/1.1" headerFields:nil];
-        NSData *d = [@"{\"status_code\":0}" dataUsingEncoding:NSUTF8StringEncoding];
-        handler(d, r, nil);
+    completionHandler:(void(^)(NSData*,NSURLResponse*,NSError*))h {
+    if (h && ghostShouldBlock(url.absoluteString)) {
+        NSHTTPURLResponse *resp = [[NSHTTPURLResponse alloc]
+            initWithURL:url statusCode:200 HTTPVersion:@"HTTP/1.1" headerFields:nil];
+        h([@"{\"status_code\":0}" dataUsingEncoding:NSUTF8StringEncoding], resp, nil);
         return [self ghost_dataTaskWithURL:url completionHandler:nil];
     }
-    return [self ghost_dataTaskWithURL:url completionHandler:handler];
+    return [self ghost_dataTaskWithURL:url completionHandler:h];
 }
 @end
 
-// ─── Screenshot detection ─────────────────────────────────────────────────────
+// ─── TTNet hook — Layer 3 (THE REAL ONE — patches TTNetworkManagerChromium) ──
+// This is what actually intercepts TikTok's QUIC/H3 traffic.
+// TTNetworkManagerChromium is TikTok's internal TTNet ObjC wrapper.
+
+typedef void (*TTNetAsyncRequestIMP)(id, SEL, NSString*, NSString*,
+    NSDictionary*, NSDictionary*, id, dispatch_queue_t, BOOL, NSInteger);
+
+static TTNetAsyncRequestIMP orig_asyncRequest = NULL;
+
+static void hooked_asyncRequest(id self, SEL cmd,
+    NSString *url, NSString *method,
+    NSDictionary *queryParams, NSDictionary *postParams,
+    id callback, dispatch_queue_t queue,
+    BOOL encrypt, NSInteger tagType)
+{
+    if (ghostShouldBlock(url)) {
+        // Silently drop — analytics/tracking requests are fire-and-forget
+        // App won't crash waiting for response
+        return;
+    }
+    orig_asyncRequest(self, cmd, url, method, queryParams, postParams,
+                      callback, queue, encrypt, tagType);
+}
+
+// requestURL:usingMethod:withGetParams:postParams:customHeaders:needCommomParams:completion:
+typedef void (*TTNetRequestURLIMP)(id, SEL, NSString*, NSString*,
+    NSDictionary*, NSDictionary*, NSDictionary*, BOOL, id);
+
+static TTNetRequestURLIMP orig_requestURL = NULL;
+
+static void hooked_requestURL(id self, SEL cmd,
+    NSString *url, NSString *method,
+    NSDictionary *getParams, NSDictionary *postParams,
+    NSDictionary *headers, BOOL needCommonParams, id completion)
+{
+    if (ghostShouldBlock(url)) return;
+    orig_requestURL(self, cmd, url, method, getParams, postParams,
+                    headers, needCommonParams, completion);
+}
+
+// sendRequest:completionHandler: — lower level hook
+typedef void (*TTNetSendRequestIMP)(id, SEL, id, id);
+static TTNetSendRequestIMP orig_sendRequest = NULL;
+
+static void hooked_sendRequest(id self, SEL cmd, id request, id handler) {
+    // Try to get URL from request object
+    NSString *urlStr = nil;
+    if ([request respondsToSelector:@selector(url)]) {
+        urlStr = [request performSelector:@selector(url)];
+    } else if ([request respondsToSelector:@selector(requestURL)]) {
+        id urlObj = [request performSelector:@selector(requestURL)];
+        urlStr = [urlObj isKindOfClass:[NSURL class]] ? [(NSURL*)urlObj absoluteString] : urlObj;
+    } else if ([request respondsToSelector:@selector(URLString)]) {
+        urlStr = [request performSelector:@selector(URLString)];
+    }
+    if (urlStr && ghostShouldBlock(urlStr)) return;
+    orig_sendRequest(self, cmd, request, handler);
+}
+
+static void installTTNetHooks(void) {
+    // Hook TTNetworkManagerChromium (main TTNet implementation)
+    Class chromium = NSClassFromString(@"TTNetworkManagerChromium");
+    if (!chromium) chromium = NSClassFromString(@"TTNetworkManager");
+
+    if (chromium) {
+        SEL asyncSel = @selector(asyncRequestForURL:method:queryParameters:postParameters:callback:callbackQueue:encrypt:tagType:);
+        Method m = class_getInstanceMethod(chromium, asyncSel);
+        if (m) {
+            orig_asyncRequest = (TTNetAsyncRequestIMP)method_getImplementation(m);
+            method_setImplementation(m, (IMP)hooked_asyncRequest);
+        }
+
+        SEL reqURLSel = @selector(requestURL:usingMethod:withGetParams:postParams:customHeaders:needCommomParams:completion:);
+        Method m2 = class_getInstanceMethod(chromium, reqURLSel);
+        if (m2) {
+            orig_requestURL = (TTNetRequestURLIMP)method_getImplementation(m2);
+            method_setImplementation(m2, (IMP)hooked_requestURL);
+        }
+    }
+
+    // Hook IESNetworkClient as backup
+    Class iesNet = NSClassFromString(@"IESNetworkClient");
+    if (iesNet) {
+        SEL reqURLSel = @selector(requestURL:usingMethod:withGetParams:postParams:customHeaders:needCommomParams:completion:);
+        Method m = class_getInstanceMethod(iesNet, reqURLSel);
+        if (m && !orig_requestURL) {
+            orig_requestURL = (TTNetRequestURLIMP)method_getImplementation(m);
+            method_setImplementation(m, (IMP)hooked_requestURL);
+        }
+    }
+
+    // Hook TTHttpTaskChromium.sendRequest:completionHandler:
+    Class taskChromium = NSClassFromString(@"TTHttpTaskChromium");
+    if (!taskChromium) taskChromium = NSClassFromString(@"TTHttpTask");
+    if (taskChromium) {
+        SEL sendSel = @selector(sendRequest:completionHandler:);
+        Method m = class_getInstanceMethod(taskChromium, sendSel);
+        if (m) {
+            orig_sendRequest = (TTNetSendRequestIMP)method_getImplementation(m);
+            method_setImplementation(m, (IMP)hooked_sendRequest);
+        }
+    }
+}
+
+// ─── UI hooks ─────────────────────────────────────────────────────────────────
 @interface UIApplication (GhostScreenshot)
 - (void)doux_sendEvent:(UIEvent *)event;
 @end
@@ -221,7 +342,6 @@ static BOOL ghostShouldBlock(NSString *url) {
 }
 @end
 
-// ─── "Seen at" timestamp hide (UI only, no network) ───────────────────────────
 @interface UILabel (GhostSeenTS)
 - (void)doux_setText:(NSString *)text;
 @end
@@ -243,7 +363,7 @@ static BOOL ghostShouldBlock(NSString *url) {
 }
 @end
 
-// ─── Settings UI ─────────────────────────────────────────────────────────────
+// ─── Settings UI ──────────────────────────────────────────────────────────────
 typedef struct { const char *key; const char *title; const char *detail; } GhostSetting;
 static GhostSetting kSettings[] = {
     {"doux_ghost_read",       "Hide Read Receipts",         "Don't send 'Seen' to sender"              },
@@ -280,8 +400,7 @@ static const int kSettingsCount = 15;
     return s == 0 ? @"Messages & DMs" : @"Feed & Tracking";
 }
 - (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)s {
-    if (s == 1) return @"Open: 3 fingers triple-tap anywhere in TikTok.";
-    return nil;
+    return s == 1 ? @"Open settings: 3 fingers, triple tap anywhere." : nil;
 }
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
     return s == 0 ? 8 : 7;
@@ -307,34 +426,28 @@ static const int kSettingsCount = 15;
 }
 @end
 
-// ─── 3-tab menu gesture ───────────────────────────────────────────────────────
-@interface GhostGestureTap : NSObject <UIGestureRecognizerDelegate>
+// ─── 3-tab menu ───────────────────────────────────────────────────────────────
+@interface GhostTap : NSObject <UIGestureRecognizerDelegate>
 + (instancetype)shared;
-- (void)handleTap:(UITapGestureRecognizer *)tap;
 @end
-@implementation GhostGestureTap
+@implementation GhostTap
 + (instancetype)shared {
-    static GhostGestureTap *s; static dispatch_once_t t;
-    dispatch_once(&t, ^{ s = [GhostGestureTap new]; }); return s;
+    static GhostTap *s; static dispatch_once_t t;
+    dispatch_once(&t, ^{ s = [GhostTap new]; }); return s;
 }
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)g
-    shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)o {
-    return YES;
-}
+    shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)o { return YES; }
 - (void)handleTap:(UITapGestureRecognizer *)tap {
-    UIWindow *win = tap.view.window;
-    if (!win) return;
-
+    UIWindow *win = tap.view.window; if (!win) return;
     extern UIViewController *doux_featuresSettingsVC(void) __attribute__((weak));
     extern UIViewController *doux_visualSettingsVC(void) __attribute__((weak));
 
-    GhostSettingsVC *ghostVC = [GhostSettingsVC new];
-    UINavigationController *gNav = [[UINavigationController alloc] initWithRootViewController:ghostVC];
-    ghostVC.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Ghost"
+    GhostSettingsVC *gvc = [GhostSettingsVC new];
+    UINavigationController *gnav = [[UINavigationController alloc] initWithRootViewController:gvc];
+    gvc.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Ghost"
         image:[UIImage systemImageNamed:@"eye.slash.fill"] tag:0];
 
-    NSMutableArray *vcs = [NSMutableArray arrayWithObject:gNav];
-
+    NSMutableArray *vcs = [NSMutableArray arrayWithObject:gnav];
     if (doux_featuresSettingsVC) {
         UIViewController *fvc = doux_featuresSettingsVC();
         if (fvc) {
@@ -353,20 +466,17 @@ static const int kSettingsCount = 15;
             [vcs addObject:nav];
         }
     }
-
     UITabBarController *tab = [UITabBarController new];
     tab.viewControllers = vcs;
     tab.modalPresentationStyle = UIModalPresentationFormSheet;
-
     UIViewController *top = win.rootViewController;
     while (top.presentedViewController) top = top.presentedViewController;
     [top presentViewController:tab animated:YES completion:nil];
 }
 @end
 
-static void installGesture(void);
 static void installGesture(void) {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)),
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0*NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
         UIWindow *win = nil;
         for (UIScene *sc in [UIApplication sharedApplication].connectedScenes) {
@@ -376,15 +486,15 @@ static void installGesture(void) {
             if (win) break;
         }
         if (!win) {
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)),
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2*NSEC_PER_SEC)),
                            dispatch_get_main_queue(), ^{ installGesture(); });
             return;
         }
         UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc]
-            initWithTarget:[GhostGestureTap shared] action:@selector(handleTap:)];
+            initWithTarget:[GhostTap shared] action:@selector(handleTap:)];
         tap.numberOfTapsRequired    = 3;
         tap.numberOfTouchesRequired = 3;
-        tap.delegate = [GhostGestureTap shared];
+        tap.delegate = [GhostTap shared];
         [win addGestureRecognizer:tap];
     });
 }
@@ -397,25 +507,29 @@ static void swizzle_instance(Class cls, SEL orig, SEL swiz) {
 
 __attribute__((constructor))
 static void ghost_init(void) {
-    // NSURLProtocol layer (catches standard NSURLSession)
+    // Layer 1: NSURLProtocol
     [NSURLProtocol registerClass:[GhostProtocol class]];
 
-    // NSURLSession swizzle layer (catches custom sessions)
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)),
+    // Layer 2 + 3: NSURLSession + TTNet hooks (after MusicallyCore is loaded)
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5*NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
-        swizzle_instance(
-            [NSURLSession class],
+        // NSURLSession swizzle
+        swizzle_instance([NSURLSession class],
             @selector(dataTaskWithRequest:completionHandler:),
             @selector(ghost_dataTaskWithRequest:completionHandler:));
-        swizzle_instance(
-            [NSURLSession class],
+        swizzle_instance([NSURLSession class],
             @selector(dataTaskWithURL:completionHandler:),
             @selector(ghost_dataTaskWithURL:completionHandler:));
+
+        // TTNet direct hooks (the real fix)
+        installTTNetHooks();
     });
 
-    // UI swizzles (safe — no network)
-    swizzle_instance([UILabel class], @selector(setText:), @selector(doux_setText:));
-    swizzle_instance([UIApplication class], @selector(sendEvent:), @selector(doux_sendEvent:));
+    // UI: screenshot + seen timestamp
+    swizzle_instance([UIApplication class],
+        @selector(sendEvent:), @selector(doux_sendEvent:));
+    swizzle_instance([UILabel class],
+        @selector(setText:), @selector(doux_setText:));
 
     installGesture();
 }
